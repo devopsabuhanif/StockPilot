@@ -116,3 +116,32 @@ export interface Settings {
   shopEmail?: string;
   memoFooter?: string;
 }
+
+export type UserRole = 'admin' | 'fixer' | 'staff';
+
+export interface AppUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  displayName: string;
+  photoURL?: string;
+  pin?: string;
+}
+
+export interface RepairJob {
+  id: string;
+  fixerId: string;
+  customerName: string;
+  customerPhone: string;
+  deviceModel: string;
+  issueDescription: string;
+  status: 'pending' | 'diagnosing' | 'waiting_parts' | 'repairing' | 'ready' | 'delivered' | 'cancelled';
+  estimatedCost: number;
+  finalCost: number;
+  partsCost: number;
+  laborCost: number;
+  earnings: number;
+  notes?: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}

@@ -130,9 +130,27 @@
         "memoFooter": { "type": "string", "description": "A custom message at the bottom of the memo." }
       },
       "required": ["shopName"]
+    },
+    "AppUser": {
+      "title": "AppUser",
+      "description": "A user of the application with specific roles and security PIN.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The unique Firebase Auth ID." },
+        "email": { "type": "string", "description": "The user's email address." },
+        "displayName": { "type": "string", "description": "The user's display name." },
+        "role": { "type": "string", "enum": ["admin", "fixer", "staff"], "description": "The user's role." },
+        "pin": { "type": "string", "description": "A 4-6 digit security PIN." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the user was created." }
+      },
+      "required": ["uid", "email", "role", "displayName", "createdAt"]
     }
   },
   "firestore": {
+    "/users/{userId}": {
+      "schema": "AppUser",
+      "description": "Collection of application users."
+    },
     "/products/{productId}": {
       "schema": "Product",
       "description": "Collection of products in the inventory."

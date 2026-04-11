@@ -71,7 +71,9 @@ export default function Sales({ products, sales, customers, services, settings }
   // Focus barcode input on mount and periodically to ensure it's always ready
   useEffect(() => {
     const focusInterval = setInterval(() => {
-      if (!showHistory && !lastSale) {
+      const activeElement = document.activeElement;
+      const isInput = activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA';
+      if (!showHistory && !lastSale && !isInput) {
         barcodeInputRef.current?.focus();
       }
     }, 2000);
@@ -292,12 +294,14 @@ export default function Sales({ products, sales, customers, services, settings }
   const handlePrint = () => {
     if (!lastSale) return;
 
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      setShowPrintMessage(true);
-      setTimeout(() => setShowPrintMessage(false), 5000);
-      return;
-    }
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
 
     const memoHtml = `
       <!DOCTYPE html>
@@ -410,19 +414,34 @@ export default function Sales({ products, sales, customers, services, settings }
             <div class="sig-line">Customer Signature</div>
             <div class="sig-line">Authorized Signature</div>
           </div>
-
-          <script>
-            window.onload = function() {
-              window.print();
-              // window.close(); // Optional: close tab after print
-            };
-          </script>
         </body>
       </html>
     `;
 
-    printWindow.document.write(memoHtml);
-    printWindow.document.close();
+    const doc = iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(memoHtml);
+      doc.close();
+
+      iframe.contentWindow?.focus();
+      
+      const removeIframe = () => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      };
+
+      if (iframe.contentWindow) {
+        iframe.contentWindow.onafterprint = removeIframe;
+      }
+
+      setTimeout(() => {
+        iframe.contentWindow?.print();
+        // Fallback removal just in case afterprint doesn't fire
+        setTimeout(removeIframe, 60000);
+      }, 500);
+    }
   };
 
   return (
@@ -438,9 +457,11 @@ export default function Sales({ products, sales, customers, services, settings }
             value={barcodeInput}
             onChange={(e) => setBarcodeInput(e.target.value)}
             onBlur={(e) => {
-              // Prevent losing focus unless a modal is open
-              if (!showHistory && !lastSale) {
-                setTimeout(() => e.target.focus(), 10);
+              // Prevent losing focus unless a modal is open or another input is focused
+              const relatedTarget = e.relatedTarget as HTMLElement;
+              const isInput = relatedTarget?.tagName === 'INPUT' || relatedTarget?.tagName === 'TEXTAREA';
+              if (!showHistory && !lastSale && !isInput) {
+                setTimeout(() => barcodeInputRef.current?.focus(), 10);
               }
             }}
           />
