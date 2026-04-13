@@ -27,7 +27,7 @@ import PinLock from './components/PinLock';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Logo } from './components/Logo';
 import { HeartZap } from './components/HeartZap';
-import { Product, Sale, ServiceOrder, Expense, Customer, Service, Settings as SettingsType, UserRole, AppUser } from './types';
+import { Product, Sale, ServiceOrder, Expense, Customer, Service, Settings as SettingsType, UserRole, AppUser, RepairJob } from './types';
 import gsap from 'gsap';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -53,6 +53,7 @@ export default function App() {
   const [services, setServices] = useState<Service[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [repairJobs, setRepairJobs] = useState<RepairJob[]>([]);
   const [settings, setSettings] = useState<SettingsType | null>(null);
   const [loading, setLoading] = useState(true);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -147,7 +148,6 @@ export default function App() {
           setUserRole('staff');
           setAppUser({
             id: user.uid,
-            uid: user.uid,
             email: user.email || '',
             displayName: user.displayName || 'User',
             role: 'staff'
@@ -231,6 +231,13 @@ export default function App() {
         setCustomers(customersData);
       }, (err) => {
         handleFirestoreError(err, OperationType.GET, 'customers');
+      }));
+
+      unsubscribers.push(onSnapshot(query(collection(db, 'repairJobs'), orderBy('createdAt', 'desc'), limit(100)), (snapshot) => {
+        const jobsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as RepairJob));
+        setRepairJobs(jobsData);
+      }, (err) => {
+        handleFirestoreError(err, OperationType.GET, 'repairJobs');
       }));
 
       unsubscribers.push(onSnapshot(doc(db, 'settings', 'global'), (docSnap) => {
@@ -484,8 +491,8 @@ export default function App() {
 
           <div className={cn(activeTab !== 'personal' && "space-y-4")} ref={contentRef}>
             <ErrorBoundary>
-              {activeTab === 'dashboard' && userRole === 'admin' && <Dashboard products={products} sales={sales} serviceOrders={serviceOrders} expenses={expenses} customers={customers} />}
-              {activeTab === 'inventory' && userRole === 'admin' && <Inventory products={products} />}
+              {activeTab === 'dashboard' && userRole === 'admin' && <Dashboard products={products} sales={sales} serviceOrders={serviceOrders} expenses={expenses} customers={customers} repairJobs={repairJobs} />}
+              {activeTab === 'inventory' && userRole === 'admin' && <Inventory products={products} settings={settings} />}
               {activeTab === 'sales' && userRole === 'admin' && <Sales products={products} sales={sales} customers={customers} services={services} settings={settings} />}
               {activeTab === 'services' && userRole === 'admin' && <ServiceCenter />}
               {activeTab === 'expenses' && userRole === 'admin' && <Expenses />}
@@ -506,7 +513,7 @@ export default function App() {
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 flex justify-around items-center p-1.5 pb-safe z-40 shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.1)]">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 flex justify-around items-center p-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] z-40 shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.1)]">
         {userRole === 'admin' ? (
           <>
             <MobileNavItem icon={<LayoutDashboard size={20} />} label="Home" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
@@ -527,7 +534,7 @@ export default function App() {
       {isMobileMenuOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
-          <div className="bg-white dark:bg-slate-900 w-full rounded-t-[2.5rem] p-6 pb-12 relative z-50 animate-in slide-in-from-bottom-full duration-300 shadow-2xl">
+          <div className="bg-white dark:bg-slate-900 w-full rounded-t-[2.5rem] p-6 pb-[calc(3rem+env(safe-area-inset-bottom))] relative z-50 animate-in slide-in-from-bottom-full duration-300 shadow-2xl">
             <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full mx-auto mb-6" />
             
             <div className="flex items-center justify-between mb-6">

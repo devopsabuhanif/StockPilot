@@ -170,6 +170,34 @@ service cloud.firestore {
              (!('notes' in data) || (data.notes is string && data.notes.size() < 2000));
     }
 
+    function isValidCashRegisterSession(data) {
+      return data.keys().hasAll(['registerId', 'date', 'status', 'openedAt', 'openedBy', 'openingBalance']) &&
+             data.registerId in ['sales', 'service', 'fixer', 'mfs'] &&
+             data.date is string && data.date.size() == 10 &&
+             data.status in ['open', 'closed'] &&
+             data.openedAt is timestamp &&
+             data.openedBy == request.auth.uid &&
+             data.openingBalance is number && data.openingBalance >= 0 &&
+             (!('closedAt' in data) || data.closedAt is timestamp) &&
+             (!('closedBy' in data) || data.closedBy is string) &&
+             (!('closingBalance' in data) || data.closingBalance is number) &&
+             (!('expectedBalance' in data) || data.expectedBalance is number) &&
+             (!('discrepancy' in data) || data.discrepancy is number) &&
+             (!('closingImageUrl' in data) || data.closingImageUrl is string && data.closingImageUrl.size() < 1000) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() < 1000));
+    }
+
+    function isValidMFSTransaction(data) {
+      return data.keys().hasAll(['provider', 'type', 'amount', 'commission', 'customerPhone', 'createdAt']) &&
+             data.provider in ['bkash', 'nagad', 'rocket', 'recharge', 'other'] &&
+             data.type in ['cash_in', 'cash_out', 'send_money', 'recharge'] &&
+             data.amount is number && data.amount >= 0 &&
+             data.commission is number && data.commission >= 0 &&
+             data.customerPhone is string &&
+             data.createdAt is timestamp &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() < 1000));
+    }
+
     function isValidSettings(data) {
       return data.keys().hasAll(['shopName']) &&
              data.shopName is string && data.shopName.size() > 0 && data.shopName.size() < 100 &&
@@ -251,6 +279,20 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow create: if isAdmin() && isValidCustomer(request.resource.data);
       allow update: if isAdmin() && isValidCustomer(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /cashRegisters/{sessionId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidCashRegisterSession(request.resource.data);
+      allow update: if isAuthenticated() && isValidCashRegisterSession(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /mfsTransactions/{txId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidMFSTransaction(request.resource.data);
+      allow update: if isAdmin() && isValidMFSTransaction(request.resource.data);
       allow delete: if isAdmin();
     }
 

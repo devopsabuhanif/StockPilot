@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { db, collection, onSnapshot, addDoc, updateDoc, doc, query, where, orderBy, serverTimestamp, handleFirestoreError, OperationType, auth } from '../firebase';
 import { RepairJob, UserRole } from '../types';
-import { Wrench, Plus, Search, Clock, CheckCircle2, AlertCircle, Phone, User, Smartphone, DollarSign, Filter, ChevronRight, MoreVertical, Trash2, Edit2 } from 'lucide-react';
+import { Wrench, Plus, Search, Clock, CheckCircle2, AlertCircle, Phone, User, Smartphone, DollarSign, Filter, ChevronRight, MoreVertical, Trash2, Edit2, TrendingUp, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { format } from 'date-fns';
+import { format, isSameDay, subDays } from 'date-fns';
+
+import { CashDrawerBox } from './CashDrawerBox';
 
 interface FixerSpaceProps {
   userRole: UserRole;
@@ -115,6 +117,12 @@ export default function FixerSpace({ userRole }: FixerSpaceProps) {
 
   const pendingJobs = jobs.filter(job => ['pending', 'diagnosing', 'repairing', 'waiting_parts'].includes(job.status)).length;
 
+  const incomeStats = {
+    daily: jobs.filter(j => j.createdAt && isSameDay(j.createdAt.toDate(), new Date())).reduce((sum, j) => sum + (j.finalCost || 0), 0),
+    weekly: jobs.filter(j => j.createdAt && j.createdAt.toDate() > subDays(new Date(), 7)).reduce((sum, j) => sum + (j.finalCost || 0), 0),
+    monthly: jobs.filter(j => j.createdAt && j.createdAt.toDate() > subDays(new Date(), 30)).reduce((sum, j) => sum + (j.finalCost || 0), 0),
+  };
+
   const getStatusColor = (status: RepairJob['status']) => {
     switch (status) {
       case 'pending': return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400';
@@ -151,6 +159,23 @@ export default function FixerSpace({ userRole }: FixerSpaceProps) {
             </div>
           </div>
 
+          <div className="hidden lg:flex bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 items-center gap-4">
+            <div className="p-2 bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-xl">
+              <TrendingUp size={20} />
+            </div>
+            <div className="flex gap-4">
+              <div>
+                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Today</p>
+                <p className="text-sm font-black text-slate-900 dark:text-white">৳{incomeStats.daily.toLocaleString()}</p>
+              </div>
+              <div className="w-px h-8 bg-slate-100 dark:bg-slate-800" />
+              <div>
+                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Weekly</p>
+                <p className="text-sm font-black text-slate-900 dark:text-white">৳{incomeStats.weekly.toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+
           <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 flex items-center gap-4">
             <div className="p-2 bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-xl">
               <Clock size={20} />
@@ -162,6 +187,8 @@ export default function FixerSpace({ userRole }: FixerSpaceProps) {
           </div>
         </div>
       </div>
+
+      <CashDrawerBox registerId="fixer" registerName="Fixer Space Register" />
 
       {/* Actions & Filters */}
       <div className="flex flex-col md:flex-row gap-4">
@@ -176,7 +203,7 @@ export default function FixerSpace({ userRole }: FixerSpaceProps) {
           />
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0">
+        <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0 no-scrollbar">
           {['all', 'pending', 'diagnosing', 'repairing', 'ready', 'delivered'].map((status) => (
             <button
               key={status}

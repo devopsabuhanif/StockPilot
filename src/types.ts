@@ -14,6 +14,7 @@ export interface Product {
   id: string;
   name: string;
   category: string;
+  brand?: string;
   price: number;
   cost: number;
   stock: number;
@@ -144,4 +145,32 @@ export interface RepairJob {
   notes?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+}
+
+export interface MFSTransaction {
+  id: string;
+  provider: 'bkash' | 'nagad' | 'rocket' | 'recharge' | 'other';
+  type: 'cash_in' | 'cash_out' | 'send_money' | 'recharge';
+  amount: number;
+  commission: number;
+  customerPhone: string;
+  notes?: string;
+  createdAt: Timestamp;
+}
+
+export interface CashRegisterSession {
+  id: string;
+  registerId: 'sales' | 'service' | 'fixer' | 'mfs';
+  date: string; // YYYY-MM-DD
+  status: 'open' | 'closed';
+  openedAt: Timestamp;
+  openedBy: string;
+  openingBalance: number;
+  closedAt?: Timestamp;
+  closedBy?: string;
+  closingBalance?: number; // Actual physical cash counted
+  expectedBalance?: number; // System calculated cash
+  discrepancy?: number; // closingBalance - expectedBalance
+  closingImageUrl?: string; // Photo proof
+  notes?: string;
 }

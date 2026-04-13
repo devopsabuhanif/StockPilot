@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db, doc, onSnapshot, updateDoc, setDoc, handleFirestoreError, OperationType, collection, query, orderBy } from '../firebase';
-import { deleteField } from 'firebase/firestore';
+import { db, doc, onSnapshot, updateDoc, setDoc, handleFirestoreError, OperationType, collection, query, orderBy, deleteField } from '../firebase';
 import { Settings as SettingsType, AppUser, UserRole } from '../types';
 import { Store, MapPin, Phone, Mail, FileText, Save, CheckCircle2, Database, Users, Shield, KeyRound, RefreshCw } from 'lucide-react';
 import BackupButton from './BackupButton';
