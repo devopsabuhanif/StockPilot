@@ -21,6 +21,8 @@ export interface Product {
   minStock: number;
   imageUrl?: string;
   description?: string;
+  keyFeatures?: string[];
+  specifications?: { [key: string]: string };
   notes?: string;
   isFeatured?: boolean;
   barcode?: string;

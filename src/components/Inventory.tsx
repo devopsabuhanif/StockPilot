@@ -28,13 +28,17 @@ import {
   CheckCircle2,
   AlertTriangle,
   Barcode as BarcodeIcon,
-  Printer
+  Printer,
+  Sparkles,
+  ListChecks,
+  Settings as SettingsIcon
 } from 'lucide-react';
 import { cn, formatAppTime, formatAppDateTime } from '../lib/utils';
 import gsap from 'gsap';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, isSameDay } from 'date-fns';
 import BarcodeGenerator from 'react-barcode';
+import { generateProductInfo } from '../services/geminiService';
 
 interface InventoryProps {
   products: Product[];
@@ -101,6 +105,8 @@ export default function Inventory({ products, settings }: InventoryProps) {
   const [printQuantity, setPrintQuantity] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [imageUrlInput, setImageUrlInput] = useState('');
+  const [aiKeyFeatures, setAiKeyFeatures] = useState<string[]>([]);
+  const [aiSpecs, setAiSpecs] = useState<{ [key: string]: string }>({});
   const tableRef = useRef<HTMLTableSectionElement>(null);
   const mobileRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -292,6 +298,8 @@ export default function Inventory({ products, settings }: InventoryProps) {
         brand: (formData.get('brand') as string) || '',
         category: (formData.get('category') as string) || '',
         description: (formData.get('description') as string) || '',
+        keyFeatures: aiKeyFeatures,
+        specifications: aiSpecs,
         notes: notes,
         isFeatured: formData.get('isFeatured') === 'on',
         barcode: (formData.get('barcode') as string) || '',
@@ -379,6 +387,8 @@ export default function Inventory({ products, settings }: InventoryProps) {
     setEditingProduct(null);
     setImageUrlInput('');
     setPrefilledBarcode('');
+    setAiKeyFeatures([]);
+    setAiSpecs({});
     setError(null);
   };
 
@@ -534,6 +544,14 @@ export default function Inventory({ products, settings }: InventoryProps) {
   const sortedDates = Object.entries(productsByDate)
     .sort((a, b) => b[0].localeCompare(a[0]))
     .slice(0, 5); // Show last 5 days
+
+  const openEditModal = (product: Product) => {
+    setEditingProduct(product);
+    setImageUrlInput(product.imageUrl || '');
+    setAiKeyFeatures(product.keyFeatures || []);
+    setAiSpecs(product.specifications || {});
+    setIsModalOpen(true);
+  };
 
   return (
     <div className="space-y-4 min-h-[600px]" ref={containerRef}>
@@ -842,11 +860,7 @@ export default function Inventory({ products, settings }: InventoryProps) {
                 History
               </button>
               <button
-                onClick={() => {
-                  setEditingProduct(product);
-                  setImageUrlInput(product.imageUrl || '');
-                  setIsModalOpen(true);
-                }}
+                onClick={() => openEditModal(product)}
                 className="flex items-center justify-center gap-2 py-3 text-xs font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-all active:scale-95 border border-indigo-100/50 dark:border-indigo-500/20"
               >
                 <Edit2 size={16} />
@@ -1028,11 +1042,7 @@ export default function Inventory({ products, settings }: InventoryProps) {
                       <History size={16} />
                     </button>
                     <button
-                      onClick={() => {
-                        setEditingProduct(product);
-                        setImageUrlInput(product.imageUrl || '');
-                        setIsModalOpen(true);
-                      }}
+                      onClick={() => openEditModal(product)}
                       className="p-2 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg border border-transparent hover:border-indigo-100 dark:hover:border-indigo-500/20 transition-all"
                       title="Edit Product"
                     >
@@ -1169,6 +1179,42 @@ export default function Inventory({ products, settings }: InventoryProps) {
                           className="flex-1 py-2 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all"
                         >
                           Generate SKU & Barcode
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            const form = (e.currentTarget.closest('form') as HTMLFormElement);
+                            const name = (form.querySelector('[name="name"]') as HTMLInputElement).value;
+                            const category = (form.querySelector('[name="category"]') as HTMLInputElement).value;
+                            
+                            if (!name || !category) {
+                              setError("Please enter Product Name and Category first.");
+                              return;
+                            }
+
+                            try {
+                              setLoading(true);
+                              setError(null);
+                              const info = await generateProductInfo(name, category);
+                              
+                              const descTextarea = form.querySelector('[name="description"]') as HTMLTextAreaElement;
+                              if (descTextarea) descTextarea.value = info.description;
+                              
+                              setAiKeyFeatures(info.keyFeatures);
+                              setAiSpecs(info.specifications);
+                              
+                              setSuccessMessage("Professional product info generated by AI!");
+                              setTimeout(() => setSuccessMessage(null), 3000);
+                            } catch (err) {
+                              setError("Failed to generate AI info. Please try again.");
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                          className="flex-1 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-200 dark:shadow-none"
+                        >
+                          <Sparkles size={12} />
+                          AI Generate Info
                         </button>
                         <button
                           type="button"
@@ -1321,6 +1367,61 @@ export default function Inventory({ products, settings }: InventoryProps) {
                           />
                         </div>
                       </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 ml-1">Product Description</label>
+                        <textarea
+                          name="description"
+                          defaultValue={editingProduct?.description}
+                          rows={3}
+                          className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white transition-all resize-none"
+                          placeholder="Professional description..."
+                        />
+                      </div>
+
+                      {/* AI Generated Preview */}
+                      {(aiKeyFeatures.length > 0 || Object.keys(aiSpecs).length > 0) && (
+                        <div className="p-4 bg-indigo-50/50 dark:bg-indigo-500/5 border border-indigo-100 dark:border-indigo-500/20 rounded-2xl space-y-4">
+                          <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
+                            <Sparkles size={14} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">AI Generated Content Preview</span>
+                          </div>
+                          
+                          {aiKeyFeatures.length > 0 && (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <ListChecks size={12} className="text-slate-400" />
+                                <span className="text-[10px] font-bold text-slate-500 uppercase">Key Features</span>
+                              </div>
+                              <ul className="grid grid-cols-1 gap-1">
+                                {aiKeyFeatures.map((f, i) => (
+                                  <li key={i} className="text-[11px] text-slate-600 dark:text-slate-400 flex items-start gap-2">
+                                    <div className="w-1 h-1 bg-indigo-400 rounded-full mt-1.5 shrink-0" />
+                                    {f}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {Object.keys(aiSpecs).length > 0 && (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <SettingsIcon size={12} className="text-slate-400" />
+                                <span className="text-[10px] font-bold text-slate-500 uppercase">Specifications</span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                {Object.entries(aiSpecs).map(([key, val]) => (
+                                  <div key={key} className="flex flex-col p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{key}</span>
+                                    <span className="text-[10px] font-medium text-slate-700 dark:text-slate-300 truncate">{val}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       <div className="space-y-1">
                         <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 ml-1">Notes / Issues</label>

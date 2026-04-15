@@ -60,7 +60,38 @@ export default function App() {
   const barcodeBuffer = useRef<string>('');
   const lastKeyTime = useRef<number>(0);
 
-  const isShopRoute = window.location.hash === '#/shop';
+  const [currentHash, setCurrentHash] = useState(window.location.hash);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      setCurrentHash(window.location.hash);
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const isShopRoute = currentHash === '' || currentHash === '#/' || currentHash.startsWith('#/shop');
+  const isAdminRoute = currentHash.startsWith('#/admin');
+
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error: any) {
+      if (error.code === 'auth/cancelled-popup-request') {
+        console.log('Login cancelled by user');
+        return;
+      }
+      console.error('Login failed:', error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
 
   // Global Barcode Listener
   useEffect(() => {
@@ -218,7 +249,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!user || isShopRoute) return; // Don't fetch all data if on public shop route
+    if (!user || !isAdminRoute) return; // Don't fetch all data if not on admin route or not logged in
 
     const unsubscribers: (() => void)[] = [];
 
@@ -307,36 +338,16 @@ export default function App() {
     };
   }, [user, isShopRoute, userRole]);
 
-  if (isShopRoute) {
-    return <Storefront />;
-  }
-
-  const handleLogin = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (error: any) {
-      if (error.code === 'auth/cancelled-popup-request') {
-        console.log('Login cancelled by user');
-        return;
-      }
-      console.error('Login failed:', error);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error('Logout failed:', error);
-    }
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
       </div>
     );
+  }
+
+  if (isShopRoute && !isAdminRoute) {
+    return <Storefront user={user} />;
   }
 
   if (!user) {
@@ -382,7 +393,7 @@ export default function App() {
             </button>
             
             <a 
-              href="#/shop" 
+              href="#/" 
               className="w-full bg-white dark:bg-slate-800 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 font-black py-4 px-6 rounded-2xl transition-all duration-300 flex items-center justify-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-700"
             >
               <Store size={20} className="text-indigo-600 dark:text-indigo-400" />
@@ -507,9 +518,7 @@ export default function App() {
             <p className="px-4 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Public</p>
           </div>
           <a
-            href="/#/shop"
-            target="_blank"
-            rel="noopener noreferrer"
+            href="#/"
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all duration-200"
           >
             <Store size={20} />
@@ -654,9 +663,7 @@ export default function App() {
 
             <div className="space-y-3 mb-8">
               <a
-                href="/#/shop"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="#/"
                 className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-base font-bold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all duration-200 border border-slate-100 dark:border-slate-800"
               >
                 <Store size={22} className="text-indigo-600" />
