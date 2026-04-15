@@ -341,27 +341,66 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4 transition-colors duration-200">
-        <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl shadow-xl border border-slate-100 dark:border-slate-800 p-8 text-center space-y-6">
-          <div className="bg-indigo-600 text-white w-20 h-20 rounded-2xl flex items-center justify-center mx-auto shadow-lg shadow-indigo-200 dark:shadow-indigo-900/20">
-            <Logo className="w-12 h-12" />
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">StockPilot</h1>
-            <p className="text-slate-500 dark:text-slate-400">Modern Inventory Management for Small Shops</p>
-            {/* Sync trigger */}
-          </div>
-          <button
-            onClick={handleLogin}
-            className="w-full bg-slate-900 dark:bg-indigo-600 hover:bg-slate-800 dark:hover:bg-indigo-700 text-white font-semibold py-3.5 px-6 rounded-xl transition-all duration-200 flex items-center justify-center gap-3 shadow-lg"
-          >
-            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5 bg-white rounded-full p-0.5" alt="Google" />
-            Sign in with Google
-          </button>
-          <p className="text-xs text-slate-400 dark:text-slate-500">
-            Secure real-time management powered by Firebase
-          </p>
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4 transition-colors duration-200 relative overflow-hidden">
+        {/* Digital Background */}
+        <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+          <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-indigo-500/10 dark:bg-indigo-500/5 rounded-full blur-[120px]"></div>
+          <div className="absolute bottom-0 right-1/4 w-[600px] h-[600px] bg-blue-500/10 dark:bg-blue-500/5 rounded-full blur-[120px]"></div>
+          <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:32px_32px]"></div>
         </div>
+
+        <motion.div 
+          initial={{ opacity: 0, y: 20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+          className="max-w-md w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-[2.5rem] shadow-2xl border border-slate-100 dark:border-slate-800 p-10 text-center space-y-8 relative z-10"
+        >
+          <div className="space-y-4">
+            <motion.div 
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+              className="bg-indigo-600 text-white w-24 h-24 rounded-3xl flex items-center justify-center mx-auto shadow-2xl shadow-indigo-500/30 dark:shadow-indigo-900/20"
+            >
+              <Logo className="w-14 h-14" />
+            </motion.div>
+            <div className="space-y-2">
+              <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">StockPilot</h1>
+              <p className="text-slate-500 dark:text-slate-400 font-medium">Modern Inventory Management for Small Shops</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <button
+              onClick={handleLogin}
+              className="w-full bg-slate-900 dark:bg-indigo-600 hover:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-black py-4 px-6 rounded-2xl transition-all duration-300 flex items-center justify-center gap-3 shadow-xl shadow-slate-200 dark:shadow-indigo-900/20 group"
+            >
+              <div className="bg-white rounded-full p-1 group-hover:scale-110 transition-transform">
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
+              </div>
+              Sign in with Google
+            </button>
+            
+            <a 
+              href="#/shop" 
+              className="w-full bg-white dark:bg-slate-800 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 font-black py-4 px-6 rounded-2xl transition-all duration-300 flex items-center justify-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-700"
+            >
+              <Store size={20} className="text-indigo-600 dark:text-indigo-400" />
+              Visit Public Shop
+            </a>
+          </div>
+
+          <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+            <p className="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest flex items-center justify-center gap-2">
+              <CloudCheck size={14} className="text-emerald-500" />
+              Secure Cloud Sync Active
+            </p>
+          </div>
+        </motion.div>
+
+        <p className="mt-8 text-slate-400 dark:text-slate-600 text-xs font-bold uppercase tracking-[0.2em] relative z-10">
+          © {new Date().getFullYear()} Smart Digital Care
+        </p>
       </div>
     );
   }
