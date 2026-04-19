@@ -468,6 +468,57 @@ export default function Inventory({ products, settings }: InventoryProps) {
     }
   };
 
+  const enrichDatabase = async () => {
+    setLoading(true);
+    setError(null);
+    setSuccessMessage('AI Auto-Enrich started... This may take a few minutes.');
+    try {
+      const needsEnrichment = products.filter(p => !p.description || p.description.length < 20);
+      if (needsEnrichment.length === 0) {
+        setSuccessMessage('All products are already fully enriched with descriptions!');
+        setLoading(false);
+        return;
+      }
+      
+      const target = needsEnrichment.slice(0, 20); // Process in batches of 20 to prevent rate-limits
+      for (const product of target) {
+        try {
+          const defaultCategory = product.category || 'Electronics';
+          let promptName = product.name;
+          if (promptName.length < 10) {
+             // Heuristic for abbreviations
+             promptName = promptName
+               .replace(/^IP /i, 'Apple iPhone ')
+               .replace(/^OP /i, 'Oppo ')
+               .replace(/^SAM /i, 'Samsung Galaxy ')
+               .replace(/^SA /i, 'Samsung Galaxy ')
+               .replace(/^RM /i, 'Redmi ');
+          }
+          const info = await generateProductInfo(promptName, defaultCategory);
+          const updateData: any = {
+            description: info.description,
+            keyFeatures: info.keyFeatures || [],
+            specifications: info.specifications || {},
+            updatedAt: Timestamp.now()
+          };
+          if (!product.category || product.category === 'default') {
+             updateData.category = defaultCategory;
+          }
+          await updateDoc(doc(db, 'products', product.id), updateData);
+        } catch(err) {
+          console.warn('Failed to enrich product:', product.name, err);
+        }
+      }
+      setSuccessMessage(`Successfully enriched ${target.length} products with AI!`);
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } catch (error: any) {
+      console.error("Enrichment error:", error);
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!deletingProduct) return;
     setLoading(true);
@@ -707,6 +758,15 @@ export default function Inventory({ products, settings }: InventoryProps) {
             >
               <Calendar size={18} />
             </button>
+            <button
+              onClick={enrichDatabase}
+              className="p-2 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-xl transition-all flex items-center justify-center gap-2 font-bold text-xs uppercase"
+              title="Auto-Enrich Missing Details with AI"
+              disabled={loading}
+            >
+              <Sparkles size={18} />
+              <span className="hidden sm:inline">Auto-Enrich</span>
+            </button>
 
             <button
               onClick={exportToCSV}
@@ -761,7 +821,7 @@ export default function Inventory({ products, settings }: InventoryProps) {
             <div className="flex items-start gap-4">
               <div className="bg-slate-100 dark:bg-slate-800 w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden shrink-0 border border-slate-200 dark:border-slate-700">
                 {product.imageUrl ? (
-                  <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" loading="lazy" />
                 ) : (
                   <Package size={20} className="text-slate-400 dark:text-slate-500" />
                 )}
@@ -908,7 +968,7 @@ export default function Inventory({ products, settings }: InventoryProps) {
                   <div className="flex items-center gap-4">
                     <div className="bg-slate-100 dark:bg-slate-800 w-10 h-10 rounded-xl flex items-center justify-center overflow-hidden shrink-0 border border-slate-200 dark:border-slate-700">
                       {product.imageUrl ? (
-                        <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" loading="lazy" />
                       ) : (
                         <Package size={18} className="text-slate-400 dark:text-slate-500" />
                       )}
@@ -1780,69 +1840,81 @@ export default function Inventory({ products, settings }: InventoryProps) {
 
                     const printContent = printRef.current.innerHTML;
                     
-                    const printWindow = window.open('', '_blank', 'width=600,height=600');
-                    if (!printWindow) {
-                      setError("Pop-up blocked. Please allow pop-ups to print labels.");
-                      return;
-                    }
+                    try {
+                      const printFrame = document.createElement('iframe');
+                      printFrame.style.position = 'fixed';
+                      printFrame.style.left = '-9999px';
+                      printFrame.style.top = '-9999px';
+                      printFrame.style.width = '1px';
+                      printFrame.style.height = '1px';
+                      document.body.appendChild(printFrame);
 
-                    printWindow.document.write(`
-                      <!DOCTYPE html>
-                      <html>
-                        <head>
-                          <title>Print Labels</title>
-                          <style>
-                            @page { 
-                              size: 38mm 28mm; 
-                              margin: 0; 
-                            }
-                            html, body { 
-                              margin: 0; 
-                              padding: 0; 
-                              width: 38mm; 
-                              height: 28mm;
-                              background: white;
-                            }
-                            .print-container { 
-                              display: block;
-                              width: 38mm;
-                            }
-                            .label-page {
-                              width: 38mm;
-                              height: 28mm;
-                              display: flex;
-                              flex-direction: column;
-                              align-items: center;
-                              justify-content: center;
-                              page-break-after: always;
-                              overflow: hidden;
-                              box-sizing: border-box;
-                              padding: 1.5mm;
-                            }
-                            /* Force black and white for thermal printers */
-                            * {
-                              color: black !important;
-                              -webkit-print-color-adjust: exact;
-                              print-color-adjust: exact;
-                            }
-                          </style>
-                        </head>
-                        <body>
-                          <div class="print-container">${printContent}</div>
-                          <script>
-                            window.onload = function() {
-                              setTimeout(function() {
-                                window.print();
-                                window.onafterprint = function() {
-                                  window.close();
-                                };
-                              }, 500);
-                            };
-                          </script>
-                        </body>
-                      </html>
-                    `);
-                    printWindow.document.close();
+                      const frameDoc = printFrame.contentWindow?.document || printFrame.contentDocument;
+                      if (!frameDoc) throw new Error("Could not access iframe document");
+
+                      frameDoc.open();
+                      frameDoc.write(`
+                        <!DOCTYPE html>
+                        <html>
+                          <head>
+                            <title>Print Labels</title>
+                            <style>
+                              @page { 
+                                size: 38mm 28mm; 
+                                margin: 0; 
+                              }
+                              html, body { 
+                                margin: 0; 
+                                padding: 0; 
+                                width: 38mm; 
+                                height: 28mm;
+                                background: white;
+                              }
+                              .print-container { 
+                                display: block;
+                                width: 38mm;
+                              }
+                              .label-page {
+                                width: 38mm;
+                                height: 28mm;
+                                display: flex;
+                                flex-direction: column;
+                                align-items: center;
+                                justify-content: center;
+                                page-break-after: always;
+                                overflow: hidden;
+                                box-sizing: border-box;
+                                padding: 1.5mm;
+                              }
+                              * {
+                                color: black !important;
+                                -webkit-print-color-adjust: exact;
+                                print-color-adjust: exact;
+                              }
+                            </style>
+                          </head>
+                          <body>
+                            <div class="print-container">${printContent}</div>
+                            <script>
+                              window.onload = function() {
+                                setTimeout(function() {
+                                  window.print();
+                                }, 500);
+                              };
+                            </script>
+                          </body>
+                        </html>
+                      `);
+                      frameDoc.close();
+                      
+                      setTimeout(() => {
+                        if (document.body.contains(printFrame)) {
+                          document.body.removeChild(printFrame);
+                        }
+                      }, 30000);
+                    } catch (e) {
+                      setError("Printing failed. Connection issue or browser restriction.");
+                    }
                   }}
                   className="flex-1 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 dark:shadow-none flex items-center justify-center gap-2"
                 >
@@ -1948,7 +2020,7 @@ export default function Inventory({ products, settings }: InventoryProps) {
                       <div className="flex items-center gap-3">
                         <div className="w-12 h-12 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shrink-0">
                           {product.imageUrl ? (
-                            <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" loading="lazy" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-slate-300">
                               <Package size={20} />

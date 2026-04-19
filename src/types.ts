@@ -37,9 +37,13 @@ export interface Sale {
   productName: string;
   quantity: number;
   unitPrice: number;
+  discount: number;
   totalPrice: number;
   totalProfit: number;
+  customerId?: string | null;
+  customerName?: string | null;
   timestamp: Timestamp;
+  type: 'product' | 'service';
 }
 
 export interface Note {
