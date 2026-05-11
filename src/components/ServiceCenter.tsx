@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db, collection, addDoc, updateDoc, deleteDoc, doc, Timestamp, onSnapshot, query, orderBy, handleFirestoreError, OperationType, auth } from '../firebase';
 import { Service, ServiceOrder, Settings } from '../types';
-import { Plus, Search, Filter, Clock, CheckCircle2, Truck, AlertCircle, Phone, User, FileText, Printer, MoreVertical, Trash2, Edit2, TrendingUp, DollarSign, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Filter, Clock, CheckCircle2, Truck, AlertCircle, Phone, User, FileText, Printer, MoreVertical, Trash2, Edit2, TrendingUp, DollarSign, AlertTriangle, X } from 'lucide-react';
 import { format, isSameDay, subDays } from 'date-fns';
 import { cn, formatAppTime, formatAppDateTime } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -389,8 +389,17 @@ export default function ServiceCenter({ settings }: { settings: Settings | null 
                 placeholder="Search customer, phone or service..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all dark:text-white"
+                className="w-full pl-10 pr-10 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all dark:text-white"
               />
+              {searchTerm && (
+                <button 
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 bg-slate-100 dark:bg-slate-800 rounded-full transition-colors"
+                  title="Clear search"
+                >
+                  <X size={12} />
+                </button>
+              )}
             </div>
             
             <div className="relative shrink-0">

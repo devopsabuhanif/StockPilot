@@ -42,6 +42,8 @@ export interface Sale {
   totalProfit: number;
   customerId?: string | null;
   customerName?: string | null;
+  imeiOrSerial?: string;
+  warranty?: string;
   timestamp: Timestamp;
   type: 'product' | 'service';
 }
@@ -123,6 +125,7 @@ export interface Settings {
   shopPhone?: string;
   shopEmail?: string;
   memoFooter?: string;
+  bkashQrImage?: string;
 }
 
 export type UserRole = 'admin' | 'fixer' | 'staff';

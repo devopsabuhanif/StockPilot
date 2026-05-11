@@ -6,25 +6,36 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatAppTime(date: Date, includeSeconds = true) {
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  // Bangladesh uses 12-hour format (12:00 PM then 01:00 PM)
-  const isBangladesh = timeZone === 'Asia/Dhaka';
-  
-  const pattern = isBangladesh 
-    ? (includeSeconds ? 'hh:mm:ss a' : 'hh:mm a')
-    : (includeSeconds ? 'HH:mm:ss' : 'HH:mm');
+export function formatAppTime(dateIn: any, includeSeconds = true) {
+  try {
+    const date = dateIn instanceof Date ? dateIn : new Date(dateIn);
+    if (isNaN(date.getTime())) return 'Unknown time';
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const isBangladesh = timeZone === 'Asia/Dhaka';
     
-  return format(date, pattern);
+    const pattern = isBangladesh 
+      ? (includeSeconds ? 'hh:mm:ss a' : 'hh:mm a')
+      : (includeSeconds ? 'HH:mm:ss' : 'HH:mm');
+      
+    return format(date, pattern);
+  } catch (e) {
+    return 'Unknown time';
+  }
 }
 
-export function formatAppDateTime(date: Date) {
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const isBangladesh = timeZone === 'Asia/Dhaka';
-  
-  const pattern = isBangladesh 
-    ? 'MMM dd, yyyy • hh:mm a'
-    : 'MMM dd, yyyy • HH:mm';
+export function formatAppDateTime(dateIn: any) {
+  try {
+    const date = dateIn instanceof Date ? dateIn : new Date(dateIn);
+    if (isNaN(date.getTime())) return 'Unknown date/time';
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const isBangladesh = timeZone === 'Asia/Dhaka';
     
-  return format(date, pattern);
+    const pattern = isBangladesh 
+      ? 'MMM dd, yyyy • hh:mm a'
+      : 'MMM dd, yyyy • HH:mm';
+      
+    return format(date, pattern);
+  } catch(e) {
+    return 'Unknown date/time';
+  }
 }

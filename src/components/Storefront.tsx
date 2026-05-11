@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { db, collection, query, where, onSnapshot, limit } from '../firebase';
-import { Product } from '../types';
+import { db, collection, query, where, getDocs, limit, orderBy } from '../firebase';
+import { Product, Sale } from '../types';
 import { 
   Package, 
   Phone, 
@@ -27,18 +27,20 @@ import {
   Laptop,
   MessageSquareWarning,
   Wrench,
-  WrenchIcon
+  WrenchIcon,
+  Star,
+  Flame,
+  Clock,
+  ThumbsUp,
+  Plus,
+  Minus
 } from 'lucide-react';
 import { Logo } from './Logo';
 import { HeartZap } from './HeartZap';
 import { cn } from '../lib/utils';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { motion, AnimatePresence } from 'motion/react';
 
 import { PCBuilder } from './PCBuilder';
-
-gsap.registerPlugin(ScrollTrigger);
 
 interface StorefrontProps {
   user?: any;
@@ -56,7 +58,76 @@ export default function Storefront({ user }: StorefrontProps) {
   const [cartItems, setCartItems] = useState<Product[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'shop' | 'pc-builder'>('shop');
+  const [toastMessage, setToastMessage] = useState<{title: string, desc?: string} | null>(null);
+  const [recentPurchase, setRecentPurchase] = useState<{name: string, location: string, time: string} | null>(null);
   
+  const [countdown, setCountdown] = useState({ hours: 0, minutes: 0, seconds: 0 });
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      const diff = tomorrow.getTime() - now.getTime();
+      
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+      
+      setCountdown({ hours, minutes, seconds });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Real Recent purchases popup (Social Proof)
+  useEffect(() => {
+    // Fetch last 10 real sales
+    const q = query(collection(db, 'sales'), orderBy('timestamp', 'desc'), limit(10));
+    let interval: NodeJS.Timeout;
+    
+    const initPopup = async () => {
+      try {
+        const snapshot = await getDocs(q);
+        const sales = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sale));
+        if (sales.length === 0) return;
+
+        // Every 30 seconds, pick a random sale from the recent ones to show
+        interval = setInterval(() => {
+          if (Math.random() > 0.3) {
+            const sale = sales[Math.floor(Math.random() * sales.length)];
+            const names = ['A customer', 'Someone']; // Obfuscated real identity if no name, but we have customerName
+            const buyerName = sale.customerName || names[Math.floor(Math.random() * names.length)];
+            
+            let timeAgo = '';
+            if (sale.timestamp) {
+               const diff = Date.now() - (sale.timestamp.toMillis ? sale.timestamp.toMillis() : new Date(sale.timestamp as any).getTime());
+               const mins = Math.floor(diff / 60000);
+               if (mins < 60) timeAgo = `${Math.max(1, mins)} mins ago`;
+               else if (mins < 1440) timeAgo = `${Math.floor(mins/60)} hours ago`;
+               else timeAgo = `recently`;
+            } else {
+               timeAgo = 'recently';
+            }
+            
+            setRecentPurchase({ 
+              name: `${buyerName} bought`, 
+              location: sale.productName || 'an item', 
+              time: timeAgo 
+            });
+            setTimeout(() => setRecentPurchase(null), 5000);
+          }
+        }, 30000);
+      } catch (error) {
+        console.error("Failed to fetch recent purchases", error);
+      }
+    };
+    
+    initPopup();
+    
+    return () => { 
+      if (interval) clearInterval(interval); 
+    };
+  }, []);
+
   const handleDemo = (feature: string) => {
     if (feature === 'PC Builder') {
        setViewMode('pc-builder');
@@ -73,7 +144,8 @@ export default function Storefront({ user }: StorefrontProps) {
   const handleAddToCart = (product: Product, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setCartItems(prev => [...prev, product]);
-    alert(`${product.name} added to cart!`);
+    setToastMessage({ title: 'Added to Cart! 🎉', desc: `${product.name} is waiting for you.` });
+    setTimeout(() => setToastMessage(null), 3000);
   };
   
   const heroRef = useRef<HTMLDivElement>(null);
@@ -83,75 +155,34 @@ export default function Storefront({ user }: StorefrontProps) {
   const hasNewArrivals = products.some(p => {
     if (!p.updatedAt) return false;
     const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-    return p.updatedAt.toMillis() > oneDayAgo;
+    const time = typeof p.updatedAt?.toMillis === 'function' ? p.updatedAt.toMillis() : (p.updatedAt as any);
+    return time > oneDayAgo;
   });
 
   useEffect(() => {
-    const q = query(collection(db, 'products'), limit(50));
+    const fetchProducts = async () => {
+      try {
+        const q = query(collection(db, 'products'), limit(50));
+        const snapshot = await getDocs(q);
+        const productsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+        // Sort: Featured first, then by updatedAt
+        const sortedProducts = productsData.sort((a, b) => {
+          if (a.isFeatured && !b.isFeatured) return -1;
+          if (!a.isFeatured && b.isFeatured) return 1;
+          const bTime = b.updatedAt ? (typeof b.updatedAt.toMillis === 'function' ? b.updatedAt.toMillis() : b.updatedAt as any) : 0;
+          const aTime = a.updatedAt ? (typeof a.updatedAt.toMillis === 'function' ? a.updatedAt.toMillis() : a.updatedAt as any) : 0;
+          return Number(bTime) - Number(aTime);
+        });
+        setProducts(sortedProducts);
+        setLoading(false);
+      } catch (error) {
+        console.error("Error fetching products:", error);
+        setLoading(false);
+      }
+    };
     
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const productsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
-      // Sort: Featured first, then by updatedAt
-      const sortedProducts = productsData.sort((a, b) => {
-        if (a.isFeatured && !b.isFeatured) return -1;
-        if (!a.isFeatured && b.isFeatured) return 1;
-        return (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0);
-      });
-      setProducts(sortedProducts);
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching products:", error);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    fetchProducts();
   }, []);
-
-  useEffect(() => {
-    if (!loading && products.length > 0) {
-      // Hero animations
-      const ctx = gsap.context(() => {
-        gsap.from(".hero-title", {
-          y: 50,
-          opacity: 0,
-          duration: 1,
-          ease: "power4.out",
-          delay: 0.2
-        });
-        
-        gsap.from(".hero-subtitle", {
-          y: 30,
-          opacity: 0,
-          duration: 1,
-          ease: "power4.out",
-          delay: 0.4
-        });
-
-        gsap.from(".hero-badge", {
-          scale: 0.8,
-          opacity: 0,
-          duration: 0.8,
-          ease: "back.out(1.7)",
-          delay: 0.1
-        });
-
-        // Staggered product cards
-        gsap.from(".product-card", {
-          y: 60,
-          opacity: 0,
-          duration: 0.8,
-          stagger: 0.1,
-          ease: "power3.out",
-          scrollTrigger: {
-            trigger: ".product-grid",
-            start: "top 85%",
-          }
-        });
-      });
-
-      return () => ctx.revert();
-    }
-  }, [loading, products.length]);
 
   useEffect(() => {
     if (!loading) {
@@ -329,8 +360,17 @@ export default function Storefront({ user }: StorefrontProps) {
               placeholder="Search products..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full py-2.5 pl-4 pr-12 bg-white text-slate-900 text-sm font-medium rounded-md border-none outline-none focus:ring-2 focus:ring-[#ef4a23]"
+              className="w-full py-2.5 pl-4 pr-20 bg-white text-slate-900 text-sm font-medium rounded-md border-none outline-none focus:ring-2 focus:ring-[#ef4a23]"
             />
+            {searchQuery && (
+              <button 
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-10 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full transition-colors"
+              >
+                <X size={14} />
+              </button>
+            )}
             <button 
               type="submit"
               className="absolute right-0 top-0 bottom-0 px-4 text-slate-500 hover:text-[#ef4a23] transition-colors rounded-r-md"
@@ -359,9 +399,20 @@ export default function Storefront({ user }: StorefrontProps) {
             >
               <ShoppingBag size={24} className="sm:w-[18px] sm:h-[18px]" />
             </button>
-            <span className="absolute -top-1 -right-1 sm:-top-2 sm:-right-2 bg-[#ef4a23] text-white text-[10px] font-bold w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center border-2 border-[#081621]">
-              {cartItems.length}
-            </span>
+            <AnimatePresence mode="popLayout">
+              {cartItems.length > 0 && (
+                <motion.span 
+                  key={cartItems.length}
+                  initial={{ scale: 0.5, rotate: -20, opacity: 0 }}
+                  animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                  exit={{ scale: 0.5, opacity: 0 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                  className="absolute -top-1 -right-1 sm:-top-2 sm:-right-2 bg-[#ef4a23] text-white text-[10px] font-bold w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center border-2 border-[#081621]"
+                >
+                  {cartItems.length}
+                </motion.span>
+              )}
+            </AnimatePresence>
           </div>
         </div>
 
@@ -379,8 +430,17 @@ export default function Storefront({ user }: StorefrontProps) {
               placeholder="Search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full py-2 pl-4 pr-10 bg-white text-slate-900 text-base font-medium rounded-md border-none outline-none focus:ring-2 focus:ring-[#ef4a23]"
+              className="w-full py-2 pl-4 pr-16 bg-white text-slate-900 text-base font-medium rounded-md border-none outline-none focus:ring-2 focus:ring-[#ef4a23]"
             />
+            {searchQuery && (
+              <button 
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-10 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full transition-colors"
+              >
+                <X size={14} />
+              </button>
+            )}
             <button 
               type="submit" 
               className="absolute right-0 top-0 bottom-0 px-3 text-slate-800 hover:text-[#ef4a23] transition-colors rounded-r-md"
@@ -439,8 +499,27 @@ export default function Storefront({ user }: StorefrontProps) {
                     className="absolute inset-0"
                   >
                     <img src="https://images.unsplash.com/photo-1593640408182-31c70c8268f5?auto=format&fit=crop&q=80&w=1200" alt="Tech" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center p-6 text-center">
-                        <h2 className="text-white text-2xl sm:text-4xl font-bold drop-shadow-lg">Premium Laptops<br/><span className="text-[#ef4a23]">Save up to 20%</span></h2>
+                    <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center p-6 text-center">
+                        <div className="mb-4 inline-flex items-center gap-2 bg-[#ef4a23]/20 border border-[#ef4a23]/50 text-[#ef4a23] px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider backdrop-blur-sm animate-pulse">
+                          <Flame size={14} className="fill-[#ef4a23]" /> Flash Sale
+                        </div>
+                        <h2 className="text-white text-2xl sm:text-4xl font-bold drop-shadow-lg mb-6">Premium Laptops<br/><span className="text-[#ef4a23]">Save up to 40%</span></h2>
+                        <div className="flex gap-4 items-center mb-8">
+                          <div className="flex flex-col">
+                            <span className="text-3xl font-black text-white bg-white/10 border border-white/20 w-14 h-14 flex items-center justify-center rounded-xl backdrop-blur-md">{countdown.hours.toString().padStart(2, '0')}</span>
+                            <span className="text-[10px] text-slate-300 font-medium uppercase mt-2">Hours</span>
+                          </div>
+                          <span className="text-2xl text-white font-bold mb-5">:</span>
+                          <div className="flex flex-col">
+                            <span className="text-3xl font-black text-white bg-white/10 border border-white/20 w-14 h-14 flex items-center justify-center rounded-xl backdrop-blur-md">{countdown.minutes.toString().padStart(2, '0')}</span>
+                            <span className="text-[10px] text-slate-300 font-medium uppercase mt-2">Mins</span>
+                          </div>
+                          <span className="text-2xl text-white font-bold mb-5">:</span>
+                          <div className="flex flex-col">
+                            <span className="text-3xl font-black text-[#ef4a23] bg-[#ef4a23]/10 border border-[#ef4a23]/30 w-14 h-14 flex items-center justify-center rounded-xl backdrop-blur-md animate-pulse">{countdown.seconds.toString().padStart(2, '0')}</span>
+                            <span className="text-[10px] text-[#ef4a23] font-medium uppercase mt-2">Secs</span>
+                          </div>
+                        </div>
                     </div>
                   </motion.div>
                 )}
@@ -704,20 +783,35 @@ export default function Storefront({ user }: StorefrontProps) {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.3 }}
                 key={product.id} 
-                className="product-card bg-white p-3 sm:p-5 flex flex-col group relative rounded-xl border border-slate-100 shadow-[0_2px_8px_rgba(0,0,0,0.04)] cursor-pointer hover:shadow-lg transition-all"
+                className="product-card bg-white p-3 sm:p-5 flex flex-col group relative rounded-xl border border-slate-100 shadow-[0_2px_8px_rgba(0,0,0,0.04)] cursor-pointer hover:shadow-xl hover:border-[#ef4a23]/30 transition-all duration-300"
                 onClick={() => setSelectedProduct(product)}
               >
-                {/* Purple Save Badge */}
-                <div className="absolute top-0 left-0 bg-[#6b2585] text-white text-[10px] sm:text-xs font-semibold px-2 sm:px-3 py-1 rounded-br-xl rounded-tl-xl z-20">
-                   Save: {saveAmount.toLocaleString('en-US', { maximumFractionDigits: 0 })}৳ (-{discountPercent}%)
+                {/* Dynamic Labels */}
+                <div className="absolute top-0 left-0 flex flex-col gap-1 z-20">
+                  {discountPercent > 5 && (
+                    <div className="bg-[#6b2585] text-white text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 rounded-br-xl rounded-tl-xl shadow-md">
+                       Save ৳{saveAmount.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                    </div>
+                  )}
+                  {product.isFeatured && discountPercent <= 5 && (
+                    <div className="bg-[#ef4a23] text-white text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 rounded-br-xl rounded-tl-xl shadow-md flex items-center gap-1">
+                       <Zap size={10} className="fill-white" /> Trending
+                    </div>
+                  )}
                 </div>
 
-                <div className="aspect-square relative overflow-hidden mb-4 mt-6">
+                <div className="aspect-square relative overflow-hidden mb-4 mt-6 rounded-lg bg-slate-50">
+                  {product.stock > 0 && product.stock <= 5 && (
+                    <div className="absolute bottom-2 left-2 right-2 bg-red-100/90 backdrop-blur-sm text-red-600 text-[10px] font-bold py-1 px-2 rounded-md text-center border border-red-200 z-10 animate-pulse">
+                      Only {product.stock} left in stock!
+                    </div>
+                  )}
+
                   {product.imageUrl ? (
                     <img 
                       src={product.imageUrl} 
                       alt={product.name} 
-                      className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 p-2 sm:p-4" 
+                      className="w-full h-full object-contain group-hover:scale-110 transition-transform duration-500 p-2 sm:p-4" 
                       referrerPolicy="no-referrer"
                       loading="lazy" 
                     />
@@ -725,14 +819,27 @@ export default function Storefront({ user }: StorefrontProps) {
                     <img
                       src={`https://ui-avatars.com/api/?name=${encodeURIComponent(product.name)}&background=f1f5f9&color=0f172a&size=512&font-size=0.33`}
                       alt={product.name}
-                      className="w-full h-full object-contain p-2 sm:p-4 opacity-50 group-hover:opacity-100 group-hover:scale-105 transition-all duration-300 rounded-lg"
+                      className="w-full h-full object-contain p-2 sm:p-4 opacity-50 group-hover:opacity-100 group-hover:scale-110 transition-all duration-500 rounded-lg"
                       loading="lazy"
                     />
                   )}
+                  
+                  {/* Quick Add Overlay */}
+                  <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                    <button 
+                      onClick={(e) => handleAddToCart(product, e)}
+                      className="translate-y-4 group-hover:translate-y-0 transition-all duration-300 bg-[#ef4a23] text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-[#d8401e] shadow-lg flex items-center gap-2"
+                    >
+                      <ShoppingCart size={14} /> Quick Add
+                    </button>
+                  </div>
                 </div>
                 
-                <div className="flex-1 flex flex-col text-left">
-                  <h3 className="font-semibold text-[13px] sm:text-sm leading-snug text-slate-800 hover:text-[#ef4a23] transition-colors mb-2 line-clamp-2">
+                <div className="flex-1 flex flex-col text-left relative mt-2">
+                  <div className="text-[10px] text-slate-400 mb-1 flex justify-between items-center">
+                     <span>{product.category}</span>
+                  </div>
+                  <h3 className="font-semibold text-[13px] sm:text-sm leading-snug text-slate-800 group-hover:text-[#ef4a23] transition-colors mb-2 line-clamp-2">
                     {product.name}
                   </h3>
                   
@@ -821,26 +928,35 @@ export default function Storefront({ user }: StorefrontProps) {
                   <div className="space-y-8">
                     {/* Header */}
                     <div className="space-y-4">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="px-2.5 py-1 bg-slate-100 text-slate-600 text-[10px] font-bold uppercase rounded border border-slate-200">
                           {selectedProduct.category}
                         </span>
                         {selectedProduct.stock > 0 ? (
-                          <span className="px-2.5 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-bold uppercase rounded border border-emerald-100">
-                            In Stock
-                          </span>
+                          <>
+                            <span className="px-2.5 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-bold uppercase rounded border border-emerald-100">
+                              In Stock {selectedProduct.stock <= 5 && `(${selectedProduct.stock} left)`}
+                            </span>
+                            {(selectedProduct.isFeatured || selectedProduct.stock <= 5) && (
+                               <span className="px-2.5 py-1 bg-amber-50 text-amber-600 text-[10px] font-bold uppercase rounded border border-amber-100 animate-pulse flex items-center gap-1">
+                                 🔥 Selling Fast
+                               </span>
+                            )}
+                          </>
                         ) : (
                           <span className="px-2.5 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">
-                            Out of Stock
+                            Out of Stock (Restocking Soon)
                           </span>
                         )}
                       </div>
                       <h2 className="text-2xl sm:text-3xl font-bold text-slate-800 leading-tight">
                         {selectedProduct.name}
                       </h2>
-                      <div className="flex items-baseline gap-2">
+                      
+                      <div className="flex items-baseline gap-2 mt-4">
                         <span className="text-3xl font-bold text-[#ef4a23]">৳{selectedProduct.price.toLocaleString()}</span>
                         <span className="text-sm font-bold text-slate-400 line-through">৳{(selectedProduct.price * 1.1).toFixed(0)}</span>
+                        <span className="ml-2 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">You save ৳{(selectedProduct.price * 0.1).toFixed(0)}</span>
                       </div>
                     </div>
 
@@ -898,6 +1014,34 @@ export default function Storefront({ user }: StorefrontProps) {
                         </div>
                       </div>
                     )}
+                    
+                    {/* Frequently Bought Together (Upsell) */}
+                    <div className="pt-6 mt-6 border-t border-slate-100">
+                      <h4 className="text-[13px] font-bold text-slate-800 uppercase mb-4 flex items-center gap-2">
+                         <Gift size={16} className="text-[#ef4a23]" /> Frequently Bought Together
+                      </h4>
+                      <div className="flex gap-3 overflow-x-auto pb-4 custom-scrollbar">
+                        {products.filter(p => p.id !== selectedProduct.id && (p.category === selectedProduct.category || p.isFeatured)).slice(0, 3).map(p => (
+                           <div key={p.id} className="min-w-[140px] w-[140px] border border-slate-200 rounded-xl p-3 flex flex-col gap-2 shrink-0 cursor-pointer hover:border-[#ef4a23]/30 hover:shadow-md transition-all group" onClick={() => setSelectedProduct(p)}>
+                             <div className="w-full aspect-square bg-slate-50 rounded-lg overflow-hidden p-2">
+                               {p.imageUrl ? (
+                                 <img src={p.imageUrl} className="w-full h-full object-contain group-hover:scale-110 transition-transform" />
+                               ) : <Package size={24} className="text-slate-300 mx-auto mt-6" />}
+                             </div>
+                             <div className="flex-1">
+                               <p className="text-[11px] font-bold text-slate-800 line-clamp-2 leading-tight group-hover:text-[#ef4a23] transition-colors">{p.name}</p>
+                               <p className="text-[#ef4a23] text-xs font-bold mt-1">৳{p.price.toLocaleString()}</p>
+                             </div>
+                             <button
+                               onClick={(e) => handleAddToCart(p, e)}
+                               className="w-full py-1.5 text-[10px] font-bold bg-slate-100 text-slate-600 rounded mt-auto hover:bg-[#ef4a23] hover:text-white transition-colors"
+                             >
+                               + Add
+                             </button>
+                           </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1214,43 +1358,111 @@ export default function Storefront({ user }: StorefrontProps) {
 
               <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
                 {cartItems.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4">
-                    <ShoppingCart size={48} className="opacity-20" />
-                    <p>Your cart is empty.</p>
+                  <div className="h-full flex flex-col items-center py-12 text-slate-400 space-y-4">
+                    <div className="relative">
+                      <ShoppingCart size={64} className="opacity-20" />
+                      <div className="absolute -top-2 -right-2 bg-amber-400 w-6 h-6 rounded-full flex items-center justify-center animate-bounce">
+                        <span className="text-white text-xs font-bold">?</span>
+                      </div>
+                    </div>
+                    <p className="font-bold text-slate-600">Your cart looks a little empty.</p>
+                    <p className="text-sm text-center px-4 mb-6">Why not add something amazing? We have fresh deals waiting for you.</p>
+                    
+                    <div className="w-full mt-8 border-t border-slate-100 pt-6">
+                      <h4 className="text-xs font-black uppercase text-slate-500 mb-4 flex items-center gap-2">
+                        <Flame size={14} className="text-[#ef4a23]" />
+                        Trending Right Now
+                      </h4>
+                      <div className="space-y-3">
+                        {products.filter(p => p.isFeatured || p.stock > 0).slice(0, 3).map(p => (
+                          <div key={p.id} className="flex gap-3 bg-white p-3 rounded-xl border border-slate-100 shadow-sm items-center hover:border-[#ef4a23]/30 transition-colors cursor-pointer" onClick={() => { setSelectedProduct(p); setIsCartOpen(false); }}>
+                            <div className="w-12 h-12 bg-slate-50 rounded text-slate-300 flex items-center justify-center p-1 shrink-0">
+                               {p.imageUrl ? <img src={p.imageUrl} className="w-full h-full object-contain" /> : <Package size={20} />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                               <p className="text-xs font-bold text-slate-800 line-clamp-1">{p.name}</p>
+                               <p className="text-[11px] text-[#ef4a23] font-bold mt-0.5">৳{p.price.toLocaleString()}</p>
+                            </div>
+                            <button 
+                              onClick={(e) => handleAddToCart(p, e)}
+                              className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 hover:bg-[#ef4a23] hover:text-white flex items-center justify-center shrink-0 transition-colors"
+                            >
+                              <Plus size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 ) : (
                   cartWithQuantities.map((item, idx) => (
-                    <div key={idx} className="flex gap-4 border-b border-slate-100 pb-4">
-                      <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-lg shrink-0 flex items-center justify-center p-2">
-                        {item.imageUrl ? <img src={item.imageUrl} alt={item.name} className="max-h-full max-w-full object-contain" /> : <Package className="text-slate-300" />}
+                    <div key={idx} className="flex gap-4 border-b border-slate-100 pb-4 group">
+                      <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-lg shrink-0 flex items-center justify-center p-2 relative">
+                        {item.stock <= 5 && (
+                           <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse" title="Low Stock" />
+                        )}
+                        {item.imageUrl ? <img src={item.imageUrl} alt={item.name} className="max-h-full max-w-full object-contain group-hover:scale-110 transition-transform" /> : <Package className="text-slate-300" />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-slate-800 line-clamp-2 leading-tight">{item.name}</p>
-                        <p className="text-xs text-slate-500 mt-1">Qty: <span className="font-bold text-slate-900">{item.quantity}</span></p>
                         <p className="text-[#ef4a23] font-bold mt-1">৳{(item.price * item.quantity).toLocaleString()}</p>
+                        <div className="flex items-center justify-between mt-2">
+                           <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-0.5">
+                              <button onClick={() => removeFromCart(item.id)} className="w-6 h-6 flex items-center justify-center text-slate-600 hover:bg-white rounded shadow-sm transition-colors">-</button>
+                              <span className="font-bold text-slate-900 text-xs w-4 text-center">{item.quantity}</span>
+                              <button onClick={() => handleAddToCart(item)} className="w-6 h-6 flex items-center justify-center text-slate-600 hover:bg-white rounded shadow-sm transition-colors">+</button>
+                           </div>
+                           {item.stock <= 5 && <span className="text-[10px] font-bold text-red-500 animate-pulse">Only {item.stock} left!</span>}
+                        </div>
                       </div>
-                      <button 
-                        onClick={() => removeFromCart(item.id)} 
-                        className="p-2 text-slate-400 hover:text-red-500 self-start hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <X size={16} />
-                      </button>
                     </div>
                   ))
                 )}
               </div>
 
-              {cartItems.length > 0 && (
-                <div className="p-6 bg-slate-50 border-t border-slate-200 shrink-0 space-y-3 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.05)]">
-                  <div className="flex justify-between font-black text-slate-800 text-lg mb-2">
-                    <span>Total Estimate:</span>
-                    <span className="text-[#ef4a23]">৳{cartWithQuantities.reduce((acc, item) => acc + (item.price * item.quantity), 0).toLocaleString()}</span>
+              {cartItems.length > 0 && (() => {
+                const totalAmount = cartWithQuantities.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+                const freeShippingThreshold = 5000;
+                const progress = Math.min(100, (totalAmount / freeShippingThreshold) * 100);
+                const remaining = freeShippingThreshold - totalAmount;
+
+                return (
+                <div className="p-6 bg-slate-50 border-t border-slate-200 shrink-0 space-y-4 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.05)]">
+                  {/* Dopamine Free Shipping element */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs font-bold text-slate-600">
+                      <span>{progress >= 100 ? '🎉 Free Shipping Unlocked!' : `Add ৳${remaining.toLocaleString()} for Free Shipping!`}</span>
+                    </div>
+                    <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${progress}%` }}
+                        className={cn("h-full transition-colors duration-500", progress >= 100 ? "bg-emerald-500" : "bg-[#ef4a23]")}
+                      />
+                    </div>
                   </div>
+
+                  <div className="flex justify-between font-black text-slate-800 text-lg mb-2 pt-2 border-t border-slate-200">
+                    <span>Total Estimate:</span>
+                    <span className="text-[#ef4a23]">৳{totalAmount.toLocaleString()}</span>
+                  </div>
+
+                  {/* Points Gamification */}
+                  <div className="bg-amber-50 border border-amber-100 rounded-lg p-2.5 flex items-center gap-3 shadow-inner">
+                    <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                      <Star size={16} className="text-amber-500 fill-amber-500" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-amber-800">You'll Earn {Math.floor(totalAmount / 100)} Tech Points</p>
+                      <p className="text-[10px] text-amber-600/80 leading-tight">Use points on your next purchase to save more.</p>
+                    </div>
+                  </div>
+
                   <button 
                     onClick={handleCartCheckout} 
-                    className="w-full py-4 bg-[#ef4a23] hover:bg-[#d8401e] text-white font-black uppercase tracking-wider rounded-xl shadow-lg shadow-[#ef4a23]/30 transition-transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
+                    className="w-full py-4 bg-[#ef4a23] hover:bg-[#d8401e] text-white font-black uppercase tracking-wider rounded-xl shadow-lg shadow-[#ef4a23]/30 transition-transform hover:-translate-y-0.5 flex items-center justify-center gap-2 group"
                   >
-                    <ShoppingCart size={20} />
+                    <ShoppingCart size={20} className="group-hover:scale-110 transition-transform" />
                     Checkout to WhatsApp
                   </button>
                    <button 
@@ -1260,9 +1472,50 @@ export default function Storefront({ user }: StorefrontProps) {
                     Clear Cart
                   </button>
                 </div>
-              )}
+              )})()}
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* Toast Notification (Dopamine hit) */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] bg-[#081621] border border-[#ef4a23]/30 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 min-w-[300px]"
+          >
+            <div className="w-10 h-10 bg-[#ef4a23] rounded-full flex items-center justify-center text-white shrink-0">
+               <ShoppingBag size={20} />
+            </div>
+            <div>
+              <p className="font-bold text-sm tracking-wide">{toastMessage.title}</p>
+              {toastMessage.desc && <p className="text-[11px] text-white/60 mt-0.5">{toastMessage.desc}</p>}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Social Proof Popup */}
+      <AnimatePresence>
+        {recentPurchase && (
+          <motion.div
+            initial={{ opacity: 0, x: -50, scale: 0.9 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -50, scale: 0.9 }}
+            className="fixed top-24 left-6 z-[90] bg-white border border-slate-200 shadow-xl rounded-xl p-3 flex items-center gap-4 max-w-[300px]"
+          >
+            <div className="w-12 h-12 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600 shrink-0">
+              <User size={20} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] text-slate-500 leading-tight mb-1">{recentPurchase.name}</p>
+              <p className="text-xs font-bold text-slate-800 truncate leading-tight">{recentPurchase.location}</p>
+              <p className="text-[9px] text-[#ef4a23] mt-1 font-bold">{recentPurchase.time}</p>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 

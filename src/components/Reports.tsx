@@ -99,6 +99,37 @@ export default function Reports({ products, sales, serviceOrders, expenses, cust
     printGlobalHtml(bodyHtml, styleHtml);
   };
 
+  const downloadCSV = () => {
+    if (sales.length === 0) return;
+    const header = ['Sale ID', 'Date', 'Type', 'Product', 'Quantity', 'Unit Price', 'Discount', 'Total Price', 'Profit', 'Customer'].join(',');
+    const rows = sales.map(s => {
+      const dateStr = s.timestamp?.toDate ? format(s.timestamp.toDate(), 'yyyy-MM-dd HH:mm') : '';
+      const prodName = s.productName ? s.productName.replace(/,/g, ' ') : 'Unknown';
+      const customerName = s.customerName ? s.customerName.replace(/,/g, ' ') : 'N/A';
+      return [
+        s.id,
+        dateStr,
+        s.type || 'product',
+        `"${prodName}"`,
+        s.quantity,
+        s.unitPrice,
+        s.discount || 0,
+        s.totalPrice,
+        s.totalProfit,
+        `"${customerName}"`
+      ].join(',');
+    });
+    const csvContent = [header, ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `sales_export_${format(new Date(), 'yyyyMMdd')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handlePrintValuation = () => {
     const totalVal = products.reduce((sum, p) => sum + (p.price * p.stock), 0);
     const bodyHtml = `
@@ -351,14 +382,14 @@ export default function Reports({ products, sales, serviceOrders, expenses, cust
                     </button>
                   </div>
 
-                  <div className="bg-slate-50 dark:bg-slate-950/30 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 opacity-50">
+                  <div className="bg-slate-50 dark:bg-slate-950/30 p-6 rounded-3xl border border-slate-100 dark:border-slate-800">
                     <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center mb-4">
                       <Download size={24} className="text-emerald-600" />
                     </div>
                     <h3 className="text-xl font-black text-slate-900 dark:text-white mb-1 uppercase tracking-tight">Export All</h3>
                     <p className="text-slate-500 dark:text-slate-400 text-sm mb-6 font-medium">Download full history as spreadsheet</p>
-                    <button disabled className="w-full bg-slate-200 dark:bg-slate-800 text-slate-400 font-black py-4 rounded-2xl cursor-not-allowed">
-                      CSV Coming Soon
+                    <button onClick={downloadCSV} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-2xl transition-all shadow-lg shadow-emerald-500/20 active:scale-[0.98]">
+                      Download CSV
                     </button>
                   </div>
                 </div>

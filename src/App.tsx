@@ -11,7 +11,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { auth, signInWithPopup, googleProvider, signOut, onSnapshot, collection, db, query, orderBy, limit, handleFirestoreError, OperationType, getDocs, getDoc, setDoc, addDoc, doc, serverTimestamp, where } from './firebase';
 import { User } from 'firebase/auth';
-import { LayoutDashboard, Package, ShoppingCart, LogOut, AlertTriangle, TrendingUp, DollarSign, PackagePlus, X, Store, Menu, Moon, Sun, Heart, Zap, CloudCheck, Users, Receipt, Wrench, FileText } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, LogOut, AlertTriangle, TrendingUp, DollarSign, PackagePlus, X, Store, Menu, Moon, Sun, Heart, Zap, CloudCheck, Users, Receipt, Wrench, FileText, Keyboard } from 'lucide-react';
 import { cn } from './lib/utils';
 import PinLock from './components/PinLock';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -51,6 +51,7 @@ export default function App() {
   const [userRole, setUserRole] = useState<UserRole>('staff');
   const [isLocked, setIsLocked] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const visitedTabs = useVisitedTabs(activeTab);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -115,6 +116,11 @@ export default function App() {
       const activeElement = document.activeElement;
       const isInput = activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA';
       
+      // Shift + ? for keyboard shortcuts
+      if (e.key === '?' && !isInput) {
+        setShowShortcuts(true);
+      }
+
       // Barcode scanners are very fast. If the time between keys is > 150ms, it's likely manual typing.
       const currentTime = Date.now();
       if (currentTime - lastKeyTime.current > 150) {
@@ -128,8 +134,6 @@ export default function App() {
           const scannedBarcode = barcodeBuffer.current;
           barcodeBuffer.current = '';
           
-          console.log('Global Barcode Detected:', scannedBarcode);
-
           // Logic: 
           // 1. If we are on any tab other than inventory/sales, switch to sales
           // 2. Dispatch a custom event so the active tab can handle it
@@ -208,7 +212,7 @@ export default function App() {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
       setUser(user);
       if (user) {
-        console.log("Logged in as:", user.email);
+
         
         // Fetch or create user record to get role
         const userDocRef = doc(db, 'users', user.uid);
@@ -449,6 +453,87 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Keyboard Shortcuts Modal */}
+      <AnimatePresence>
+        {showShortcuts && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowShortcuts(false); }}>
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800"
+            >
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                    <Keyboard size={24} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg text-slate-900 dark:text-white">Keyboard Shortcuts</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Work faster with these hotkeys</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowShortcuts(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 max-h-[60vh] overflow-y-auto">
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Global</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-300">Scan Barcode</span>
+                        <div className="flex gap-1"><kbd className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-[10px] font-mono text-slate-500 shadow-sm border border-slate-200 dark:border-slate-700">Anywhere</kbd></div>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-300">Shortcuts List</span>
+                        <div className="flex gap-1"><kbd className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-[10px] font-mono text-slate-500 shadow-sm border border-slate-200 dark:border-slate-700">?</kbd></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Navigation</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-300">Close Modals</span>
+                        <div className="flex gap-1"><kbd className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-[10px] font-mono text-slate-500 shadow-sm border border-slate-200 dark:border-slate-700">Esc</kbd></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Search & Action</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-300">Search Context</span>
+                        <div className="flex gap-1">
+                          <kbd className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-[10px] font-mono text-slate-500 shadow-sm border border-slate-200 dark:border-slate-700">⌘</kbd>
+                          <span className="text-slate-400">+</span>
+                          <kbd className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-[10px] font-mono text-slate-500 shadow-sm border border-slate-200 dark:border-slate-700">S</kbd>
+                        </div>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-300">Print Last Sale</span>
+                        <div className="flex gap-1">
+                          <kbd className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-[10px] font-mono text-slate-500 shadow-sm border border-slate-200 dark:border-slate-700">⌘</kbd>
+                          <span className="text-slate-400">+</span>
+                          <kbd className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-[10px] font-mono text-slate-500 shadow-sm border border-slate-200 dark:border-slate-700">P</kbd>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col lg:flex-row transition-colors duration-200">
       
       {/* Desktop Sidebar */}
@@ -615,6 +700,13 @@ export default function App() {
                 <span className="text-xs font-medium">{lowStockProducts.length} items low in stock</span>
               </div>
             )}
+            <button
+              onClick={() => setShowShortcuts(true)}
+              className="p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors hidden sm:block"
+              title="Keyboard Shortcuts (Shift + ?)"
+            >
+              <Keyboard size={20} />
+            </button>
           </header>
 
           <div className={cn(activeTab !== 'personal' && "space-y-4")} ref={contentRef}>
@@ -628,7 +720,7 @@ export default function App() {
                   {visitedTabs['inventory'] && userRole === 'admin' && <Inventory products={products} settings={settings} />}
                 </div>
                 <div className={activeTab === 'sales' ? 'block' : 'hidden'}>
-                  {visitedTabs['sales'] && userRole === 'admin' && <Sales products={products} sales={sales} customers={customers} services={services} settings={settings} />}
+                  {visitedTabs['sales'] && userRole === 'admin' && <Sales products={products} sales={sales} customers={customers} services={services} settings={settings} appUser={appUser} />}
                 </div>
                 <div className={activeTab === 'services' ? 'block' : 'hidden'}>
                   {visitedTabs['services'] && userRole === 'admin' && <ServiceCenter settings={settings} />}

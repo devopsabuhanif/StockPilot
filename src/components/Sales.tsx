@@ -1,7 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { db, collection, addDoc, updateDoc, deleteDoc, doc, Timestamp, handleFirestoreError, OperationType, writeBatch } from '../firebase';
-import { Product, Sale, Customer, Service, Settings } from '../types';
-import { ShoppingCart, Search, Plus, Minus, Trash2, Package, AlertCircle, CheckCircle2, History, X, Filter, User, UserPlus, Zap, Barcode, Printer, Receipt, AlertTriangle, ChevronDown, Eye, EyeOff } from 'lucide-react';
+import { Product, Sale, Customer, Service, Settings, AppUser } from '../types';
+import { StoreSeal } from './StoreSeal';
+import { Logo } from './Logo';
+import { ShoppingCart, Search, Plus, Minus, Trash2, Package, AlertCircle, CheckCircle2, History, X, Filter, User, UserPlus, Zap, Barcode, Printer, Receipt, AlertTriangle, ChevronDown, Eye, EyeOff, Bookmark, BookmarkPlus, Archive, Play } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn, formatAppTime, formatAppDateTime } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -13,15 +15,18 @@ interface SalesProps {
   customers: Customer[];
   services: Service[];
   settings: Settings | null;
+  appUser: AppUser | null;
 }
 
 interface CartItem {
   product: Product;
   quantity: number;
   negotiatedPrice: number | string;
+  imeiOrSerial?: string;
+  warranty?: string;
 }
 
-export default function Sales({ products, sales, customers, services, settings }: SalesProps) {
+export default function Sales({ products, sales, customers, services, settings, appUser }: SalesProps) {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -50,9 +55,25 @@ export default function Sales({ products, sales, customers, services, settings }
     customer: Customer | null;
     timestamp: Date;
     discount: number;
+    warranty?: string;
+    imeiOrSerial?: string;
   } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+
+  const [heldCarts, setHeldCarts] = useState<{ id: string, name: string, items: CartItem[], customer: Customer | null, timestamp: number }[]>(() => {
+    try {
+      const stored = localStorage.getItem('heldCarts');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showHeldCarts, setShowHeldCarts] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('heldCarts', JSON.stringify(heldCarts));
+  }, [heldCarts]);
 
   // Global Barcode Listener
   useEffect(() => {
@@ -86,10 +107,24 @@ export default function Sales({ products, sales, customers, services, settings }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape for closing modals
+      if (e.key === 'Escape') {
+        if (showHistory) setShowHistory(false);
+        if (lastSale) setLastSale(null);
+        if (saleToDelete) setSaleToDelete(null);
+        if (showHeldCarts) setShowHeldCarts(false);
+      }
       // Ctrl/Cmd + S for search
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         searchInputRef.current?.focus();
+      }
+      // Ctrl/Cmd + P for print
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        if (lastSale) {
+          handlePrint();
+        }
       }
       // Ctrl/Cmd + Enter for checkout
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -102,18 +137,19 @@ export default function Sales({ products, sales, customers, services, settings }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, loading, discount]);
+  }, [cart, loading, discount, showHistory, lastSale, saleToDelete, showHeldCarts]);
 
-  // Focus barcode input on mount and periodically to ensure it's always ready
+  // Focus barcode input on mount
   useEffect(() => {
-    const focusInterval = setInterval(() => {
-      const activeElement = document.activeElement;
-      const isInput = activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA';
-      if (!showHistory && !lastSale && !isInput) {
-        barcodeInputRef.current?.focus();
-      }
-    }, 2000);
-    return () => clearInterval(focusInterval);
+    if (!showHistory && !lastSale) {
+      setTimeout(() => {
+        const activeElement = document.activeElement;
+        const isInput = activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA';
+        if (!isInput) {
+          barcodeInputRef.current?.focus();
+        }
+      }, 100);
+    }
   }, [showHistory, lastSale]);
 
   const handleBarcodeSubmit = (e: React.FormEvent) => {
@@ -279,6 +315,31 @@ export default function Sales({ products, sales, customers, services, settings }
     }
   };
 
+  const handleHoldCart = () => {
+    if (cart.length === 0) return;
+    const newHold = {
+      id: Date.now().toString(),
+      name: selectedCustomer ? selectedCustomer.name : `Draft #${heldCarts.length + 1} (${format(new Date(), 'HH:mm')})`,
+      items: cart,
+      customer: selectedCustomer,
+      timestamp: Date.now()
+    };
+    setHeldCarts([newHold, ...heldCarts]);
+    setCart([]);
+    setSelectedCustomer(null);
+    setReceivedAmount('');
+    setDiscount(0);
+    setSuccessMessage('Cart saved to drafts!');
+    setTimeout(() => setSuccessMessage(null), 3000);
+  };
+
+  const handleRestoreCart = (draft: { id: string, items: CartItem[], customer: Customer | null }) => {
+    setCart(draft.items);
+    setSelectedCustomer(draft.customer);
+    setHeldCarts(heldCarts.filter(c => c.id !== draft.id));
+    setShowHeldCarts(false);
+  };
+
   const handleCheckout = async () => {
     if (cart.length === 0) return;
     setLoading(true);
@@ -317,6 +378,8 @@ export default function Sales({ products, sales, customers, services, settings }
           totalProfit,
           customerId: selectedCustomer?.id || null,
           customerName: selectedCustomer?.name || null,
+          imeiOrSerial: item.imeiOrSerial || null,
+          warranty: item.warranty || null,
           timestamp: Timestamp.now(),
           type: isService ? 'service' : 'product'
         });
@@ -390,11 +453,17 @@ export default function Sales({ products, sales, customers, services, settings }
     }
   };
 
+  const [receiptType, setReceiptType] = useState<'a4' | 'pos'>('pos');
+
   const handlePrint = (customSale?: any) => {
+    if (customSale && customSale.nativeEvent) {
+      customSale = undefined;
+    }
     if (customSale) {
       const isFirestoreSale = customSale.productName !== undefined;
       
       if (isFirestoreSale) {
+
         setLastSale({
           items: [{
             product: { 
@@ -409,6 +478,8 @@ export default function Sales({ products, sales, customers, services, settings }
           received: customSale.totalPrice,
           change: 0,
           customer: customSale.customerName ? { name: customSale.customerName, phone: '' } as any : null,
+          warranty: customSale.warranty || '',
+          imeiOrSerial: customSale.imeiOrSerial || '',
           timestamp: customSale.timestamp?.toDate ? customSale.timestamp.toDate() : new Date(),
           discount: customSale.discount || 0
         });
@@ -417,15 +488,15 @@ export default function Sales({ products, sales, customers, services, settings }
       }
     }
     setTimeout(() => {
-      const receiptContent = document.getElementById('sales-receipt-content')?.innerHTML;
-      if (receiptContent) {
+      const receiptElement = document.getElementById('sales-receipt-content');
+      if (receiptElement) {
         let printDiv = document.querySelector('.temp-print-container') as HTMLDivElement;
         if (!printDiv) {
           printDiv = document.createElement('div');
           printDiv.className = 'global-print-container temp-print-container';
           document.body.appendChild(printDiv);
         }
-        printDiv.innerHTML = receiptContent;
+        printDiv.innerHTML = receiptElement.outerHTML;
         setTimeout(() => {
           window.print();
           setTimeout(() => {
@@ -513,9 +584,18 @@ export default function Sales({ products, sales, customers, services, settings }
                 placeholder={viewMode === 'products' ? "Search... (⌘S)" : "Search..."}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-700 dark:text-slate-200 font-medium placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                className="w-full pl-9 pr-8 py-2 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-700 dark:text-slate-200 font-medium placeholder:text-slate-400 dark:placeholder:text-slate-500"
                 autoFocus
               />
+              {searchQuery && (
+                <button 
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 bg-slate-100 dark:bg-slate-700 rounded-full transition-colors"
+                  title="Clear search"
+                >
+                  <X size={10} />
+                </button>
+              )}
             </div>
           </div>
 
@@ -565,6 +645,25 @@ export default function Sales({ products, sales, customers, services, settings }
                 <span>Scanner</span>
               </div>
               
+              <div className="hidden sm:flex items-center gap-1">
+                <button 
+                  onClick={() => setShowHeldCarts(true)}
+                  className="flex items-center justify-center w-7 h-7 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors border border-blue-200 dark:border-blue-800 relative group"
+                  title="View Drafts"
+                >
+                  <Bookmark size={14} />
+                  {heldCarts.length > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900">{heldCarts.length}</span>}
+                </button>
+                <button 
+                  onClick={handleHoldCart}
+                  disabled={cart.length === 0}
+                  className="flex items-center justify-center w-7 h-7 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors border border-amber-200 dark:border-amber-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Hold Cart (Draft)"
+                >
+                  <BookmarkPlus size={14} />
+                </button>
+              </div>
+
               <button
                 onClick={() => setShowCostPrice(!showCostPrice)}
                 className={cn(
@@ -835,7 +934,30 @@ export default function Sales({ products, sales, customers, services, settings }
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 rounded-md p-0.5 border border-slate-100 dark:border-slate-700">
+                  <div className="flex items-center justify-between mt-1 gap-2">
+                    <div className="flex-1 space-y-1">
+                      <input 
+                        type="text" 
+                        placeholder="IMEI/Serial"
+                        value={item.imeiOrSerial || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setCart(prev => prev.map(c => c.product.id === item.product.id ? { ...c, imeiOrSerial: val } : c));
+                        }}
+                        className="w-full bg-slate-50 dark:bg-slate-800/50 rounded px-1.5 py-0.5 text-[8px] font-bold border border-slate-100 dark:border-slate-700 focus:ring-1 focus:ring-indigo-500 outline-none"
+                      />
+                      <input 
+                        type="text" 
+                        placeholder="Warranty (e.g. 1 Year)"
+                        value={item.warranty || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setCart(prev => prev.map(c => c.product.id === item.product.id ? { ...c, warranty: val } : c));
+                        }}
+                        className="w-full bg-slate-50 dark:bg-slate-800/50 rounded px-1.5 py-0.5 text-[8px] font-bold border border-slate-100 dark:border-slate-700 focus:ring-1 focus:ring-indigo-500 outline-none"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 rounded-md p-0.5 border border-slate-100 dark:border-slate-700 shrink-0">
                       <button 
                         onClick={() => updateQuantity(item.product.id, -1)}
                         className="w-4 h-4 flex items-center justify-center bg-white dark:bg-slate-700 rounded shadow-sm text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 disabled:opacity-50"
@@ -855,8 +977,9 @@ export default function Sales({ products, sales, customers, services, settings }
                   </div>
                 </div>
               </div>
-            ))
-          )}
+            </div>
+          ))
+        )}
         </div>
 
         {/* Checkout Section */}
@@ -918,6 +1041,12 @@ export default function Sales({ products, sales, customers, services, settings }
                   />
                 </div>
                 <div className="flex gap-1 overflow-x-auto no-scrollbar w-full justify-end">
+                  <button
+                    onClick={() => setReceivedAmount(cartTotal.toString())}
+                    className="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 text-[8px] font-black rounded hover:bg-emerald-200 dark:hover:bg-emerald-900/60 transition-colors"
+                  >
+                    Exact
+                  </button>
                   {[50, 100, 500, 1000].map(amt => (
                     <button
                       key={amt}
@@ -994,6 +1123,67 @@ export default function Sales({ products, sales, customers, services, settings }
         </div>
       )}
 
+      {/* Held Carts (Drafts) Modal */}
+      {showHeldCarts && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-xl max-h-[80vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Bookmark size={20} className="text-indigo-600 dark:text-indigo-400" />
+                Parked Sales
+              </h3>
+              <button onClick={() => setShowHeldCarts(false)} className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 bg-white dark:bg-slate-800 rounded-full p-1 shadow-sm">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="space-y-3">
+                {heldCarts.length === 0 ? (
+                  <div className="text-center py-12 text-slate-500 dark:text-slate-400 flex flex-col items-center">
+                    <Archive size={32} className="opacity-20 mb-3" />
+                    No parked sales.
+                  </div>
+                ) : (
+                  heldCarts.map((draft) => (
+                    <div key={draft.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 flex items-center gap-4 hover:border-indigo-300 dark:hover:border-indigo-600 transition-colors">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-bold text-slate-900 dark:text-white truncate">{draft.name}</h4>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">{draft.items.length} items</span>
+                          <span className="text-[10px] text-slate-400">{(() => { 
+                            if (!draft.timestamp) return 'Unknown';
+                            try {
+                              const d = new Date(draft.timestamp);
+                              return isNaN(d.getTime()) ? 'Unknown' : format(d, 'MMM d, p');
+                            } catch(e) { return 'Unknown'; }
+                          })()}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => handleRestoreCart(draft)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold text-xs rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
+                        >
+                          <Play size={14} className="fill-current" />
+                          Resume
+                        </button>
+                        <button
+                          onClick={() => setHeldCarts(heldCarts.filter(c => c.id !== draft.id))}
+                          className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"
+                          title="Delete draft"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* History Modal */}
       {showHistory && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -1028,7 +1218,7 @@ export default function Sales({ products, sales, customers, services, settings }
                             <h4 className="font-bold text-slate-900 dark:text-white">{sale.productName}</h4>
                             <div className="flex items-center gap-2">
                               <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {formatAppDateTime(sale.timestamp.toDate())}
+                                {sale.timestamp ? formatAppDateTime(typeof sale.timestamp.toDate === 'function' ? sale.timestamp.toDate() : new Date(sale.timestamp as any)) : 'Unknown time'}
                               </p>
                               {sale.unitPrice !== product?.price && (
                                 <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-1.5 rounded">
@@ -1123,122 +1313,299 @@ export default function Sales({ products, sales, customers, services, settings }
       {/* Cash Memo / Receipt Modal */}
       <AnimatePresence>
         {lastSale && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[110]">
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[110]">
             <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col"
+              className={cn(
+                "bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col transition-all duration-300",
+                receiptType === 'a4' ? "w-full max-w-4xl h-[90vh]" : "w-full max-w-sm max-h-[80vh]"
+              )}
             >
-              <div id="sales-receipt-content" className="bg-white text-black font-sans">
-                <style>{`
-                  @media print {
-                    #sales-receipt-content { background: white !important; color: black !important; width: 80mm; margin: 0 auto; padding: 10px; font-size: 12px; }
-                    #sales-receipt-content * { color: black !important; }
-                    .print-hidden-element { display: none !important; }
-                    .print-visible-element { display: block !important; }
-                  }
-                `}</style>
-                <div className="p-6 text-center border-b border-dashed border-slate-200 relative">
-                  <img 
-                    src="https://i.ibb.co/cX7qP4n6/Picsart-26-04-10-02-09-25-057.png" 
-                    alt="Logo" 
-                    className="w-32 h-auto mx-auto mb-4 hidden print-visible-element" 
-                    referrerPolicy="no-referrer" 
-                  />
-                  <div className="print-hidden-element w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle2 size={32} />
+              {/* Receipt Controls */}
+              <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 print:hidden">
+                <div className="flex items-center gap-2">
+                  <div className="flex bg-slate-200/50 dark:bg-slate-900 p-1 rounded-xl">
+                    <button
+                      onClick={() => setReceiptType('pos')}
+                      className={cn(
+                        "px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all",
+                        receiptType === 'pos' ? "bg-white dark:bg-slate-700 text-indigo-600 shadow-sm" : "text-slate-500"
+                      )}
+                    >
+                      POS (80mm)
+                    </button>
+                    <button
+                      onClick={() => setReceiptType('a4')}
+                      className={cn(
+                        "px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all",
+                        receiptType === 'a4' ? "bg-white dark:bg-slate-700 text-indigo-600 shadow-sm" : "text-slate-500"
+                      )}
+                    >
+                      A4 Invoice
+                    </button>
                   </div>
-                  <h2 className="text-2xl font-black mb-1 uppercase tracking-tight">
-                    {settings?.shopName || 'DIGITAL SHOP'}
-                  </h2>
-                  <p className="text-[10px] uppercase tracking-widest font-bold">Cash Memo</p>
-                  {settings?.shopAddress && (
-                    <p className="text-[8px] mt-1 max-w-[200px] mx-auto leading-tight">{settings.shopAddress}</p>
-                  )}
-                  {settings?.shopPhone && (
-                    <p className="text-[8px] mt-0.5">Phone: {settings.shopPhone}</p>
-                  )}
-                  <button 
-                    onClick={() => setLastSale(null)}
-                    className="absolute top-4 right-4 p-1 text-slate-400 hover:text-slate-600 print-hidden-element"
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handlePrint()}
+                    className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-lg flex items-center gap-2"
+                    title="Print Memo/Invoice"
                   >
-                    <X size={20} />
+                    <Printer size={18} />
+                    <span>Print Invoice</span>
+                  </button>
+                  <button onClick={() => setLastSale(null)} className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 hover:text-slate-700 transition-colors">
+                    <X size={18} />
                   </button>
                 </div>
+              </div>
 
-                <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto font-mono" style={{ maxHeight: 'none', overflow: 'visible' }}>
-                <div className="flex justify-between text-[10px] text-slate-500">
-                  <span>Date: {format(lastSale.timestamp, 'yyyy-MM-dd')}</span>
-                  <span>Time: {formatAppTime(lastSale.timestamp)}</span>
-                </div>
-
-                {lastSale.customer && (
-                  <div className="py-2 border-y border-slate-100 dark:border-slate-800">
-                    <p className="text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-wider">Customer Info</p>
-                    <p className="text-xs text-slate-600 dark:text-slate-400">{lastSale.customer.name}</p>
-                    <p className="text-[10px] text-slate-500">{lastSale.customer.phone}</p>
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <p className="text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-wider">Items</p>
-                  {lastSale.items.map((item, idx) => (
-                    <div key={idx} className="flex justify-between text-xs">
-                      <div className="flex-1 pr-4">
-                        <p className="text-slate-800 dark:text-slate-200 truncate">{item.product.name}</p>
-                        <p className="text-[10px] text-slate-500">{item.quantity} x ৳{item.negotiatedPrice}</p>
+              <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-100 dark:bg-slate-950/50 flex justify-center">
+                <div id="sales-receipt-content" className={cn(
+                  "bg-white text-black font-sans shadow-sm",
+                  receiptType === 'a4' ? "w-[210mm] min-h-[260mm] p-[15mm] flex flex-col" : "w-[80mm] p-4 text-[10px]"
+                )}>
+                  <style>{`
+                    @media print {
+                      @page { size: ${receiptType === 'a4' ? 'A4' : '80mm 200mm'}; margin: 0; }
+                      body { background: white !important; margin: 0 !important; padding: 0 !important; }
+                      body * { visibility: hidden; }
+                      #sales-receipt-content, #sales-receipt-content * { visibility: visible; }
+                      #sales-receipt-content { 
+                        position: absolute; 
+                        left: 0; 
+                        top: 0; 
+                        width: ${receiptType === 'a4' ? '100%' : '80mm'}; 
+                        box-shadow: none !important; 
+                        background: white !important;
+                        color: black !important;
+                      }
+                      .dark { color-scheme: light; }
+                    }
+                    .retail-blue { color: #1e3a8a; }
+                    .retail-bg-blue { background-color: #1e3a8a; }
+                  `}</style>
+                  
+                  {/* Header */}
+                  <div className={cn("flex justify-between items-start mb-8", receiptType === 'pos' && "flex-col items-center text-center")}>
+                    <div className={cn("flex items-center gap-4", receiptType === 'pos' && "flex-col mb-4")}>
+                      <div className={cn("bg-white text-[#1e3a8a] border-4 border-[#1e3a8a] flex items-center justify-center p-2 rounded-2xl", receiptType === 'a4' ? "w-20 h-20" : "w-16 h-16")}>
+                        <Logo className={receiptType === 'a4' ? "w-12 h-12" : "w-10 h-10"} />
                       </div>
-                      <span className="font-bold text-slate-900 dark:text-white">৳{(item.quantity * Number(item.negotiatedPrice || 0)).toFixed(2)}</span>
+                      <div className={receiptType === 'pos' ? "text-center" : "text-left"}>
+                        <h1 className={cn("font-black tracking-tight leading-none text-[#1e3a8a]", receiptType === 'a4' ? "text-4xl uppercase" : "text-xl uppercase")}>Smart Digital Care</h1>
+                        <p className={cn("font-bold text-slate-500 tracking-tighter uppercase mb-2", receiptType === 'a4' ? "text-xs" : "text-[8px]")}>
+                          Quality Products • Trusted Service • Satisfaction
+                        </p>
+                        <div className={cn("space-y-0.5 text-slate-600 font-medium", receiptType === 'a4' ? "text-xs" : "text-[9px]")}>
+                          <p>{settings?.shopAddress || 'Cantonment Masjid Market, Cantonment, Cumilla'}</p>
+                          <p>For any support WhatsApp: +8801766407313</p>
+                          <p>For mobile repair whatsapp: +8801854648690</p>
+                          <p>Facebook: facebook.com/sdc.cantonment</p>
+                        </div>
+                      </div>
                     </div>
-                  ))}
-                </div>
-
-                <div className="pt-4 border-t border-dashed border-slate-200 dark:border-slate-800 space-y-1.5">
-                  <div className="flex justify-between text-sm font-black text-slate-900 dark:text-white">
-                    <span>TOTAL</span>
-                    <span>৳{(lastSale.total || 0).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400">
-                    <span>Received</span>
-                    <span>৳{(lastSale.received || 0).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                    <span>Change</span>
-                    <span>৳{(lastSale.change || 0).toFixed(2)}</span>
-                  </div>
-                </div>
-
-                <div className="pt-8 text-center space-y-4">
-                  <p className="text-[10px] text-slate-400 italic">
-                    {settings?.memoFooter || 'Thank you for your business!'}
-                  </p>
-                  <div className="flex justify-between pt-8">
-                    <div className="w-24 border-t border-slate-300 dark:border-slate-700 pt-1">
-                      <p className="text-[8px] text-slate-400">Customer Signature</p>
-                    </div>
-                    <div className="w-24 border-t border-slate-300 dark:border-slate-700 pt-1">
-                      <p className="text-[8px] text-slate-400">Authorized Signature</p>
+                    
+                    <div className={cn("text-right", receiptType === 'pos' ? "w-full border-t border-slate-100 pt-4 mt-2" : "")}>
+                      <div className={cn("inline-block retail-bg-blue text-white font-black px-4 py-2 uppercase tracking-widest mb-4", receiptType === 'a4' ? "text-xl" : "text-sm w-full text-center")}>
+                        {receiptType === 'a4' ? 'Invoice/Memo' : 'Cash Memo'}
+                      </div>
+                      <div className={cn("space-y-1 text-slate-700", receiptType === 'a4' ? "text-sm" : "text-[10px]")}>
+                        <p className="flex justify-between gap-4"><span className="font-bold uppercase text-slate-400">Inv No:</span> <span>#SDC-{lastSale.timestamp ? format(lastSale.timestamp, 'yyyyMMddHHss') : 'NA'}</span></p>
+                        <p className="flex justify-between gap-4"><span className="font-bold uppercase text-slate-400">Date:</span> <span>{lastSale.timestamp ? format(lastSale.timestamp, 'dd MMM, yyyy') : 'NA'}</span></p>
+                        <p className="flex justify-between gap-4"><span className="font-bold uppercase text-slate-400">Time:</span> <span>{lastSale.timestamp ? format(lastSale.timestamp, 'hh:mm a') : 'NA'}</span></p>
+                        <p className="flex justify-between gap-4"><span className="font-bold uppercase text-slate-400">Salesman:</span> <span>{appUser?.displayName || 'Admin'}</span></p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
-              </div>
 
-              <div className="p-6 bg-slate-50 dark:bg-slate-800/50 flex gap-3 print:hidden">
-                <button
-                  onClick={handlePrint}
-                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
-                >
-                  <Printer size={16} />
-                  Print Memo
-                </button>
-                <button
-                  onClick={() => setLastSale(null)}
-                  className="flex-1 py-3 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 dark:shadow-none"
-                >
-                  Done
-                </button>
+                  {/* Customer Section */}
+                  <div className={cn("grid grid-cols-2 gap-8 mb-8 border-y-2 border-slate-100 py-4", receiptType === 'pos' && "flex flex-col gap-2 py-2 mb-4")}>
+                    <div className={receiptType === 'pos' ? "text-center" : "text-left"}>
+                      <h3 className="text-[10px] font-black uppercase text-slate-400 mb-2 tracking-widest">Bill To:</h3>
+                      <p className="font-black text-slate-900 uppercase">{lastSale.customer?.name || 'Cash Customer'}</p>
+                      <p className="text-slate-500 font-bold">{lastSale.customer?.phone || 'N/A'}</p>
+                    </div>
+                    {receiptType === 'a4' && (
+                      <div className="text-right">
+                        <h3 className="text-[10px] font-black uppercase text-slate-400 mb-2 tracking-widest">Payment Method:</h3>
+                        <p className="font-black text-slate-900 uppercase">Cash / MFS</p>
+                        <p className="text-emerald-600 font-bold">PAID FULL</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Table */}
+                  <div className="mb-8 overflow-hidden rounded-t-xl border-x border-slate-100">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="retail-bg-blue text-white text-[10px] font-black uppercase tracking-wider">
+                          <th className="p-3 text-center w-8">SL</th>
+                          <th className="p-3">Product Name / Info</th>
+                          <th className={cn("p-3 text-center", receiptType === 'pos' && "hidden")}>Warranty</th>
+                          <th className="p-3 text-center">Qty</th>
+                          <th className="p-3 text-right">Price</th>
+                          <th className="p-3 text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className={cn("divide-y divide-slate-100", receiptType === 'a4' ? "text-sm" : "text-[10px]")}>
+                        {lastSale.items.map((item: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                            <td className="p-3 text-center text-slate-400 font-bold">{idx + 1}</td>
+                            <td className="p-3">
+                              <p className="font-black text-slate-900 leading-tight">{item.product.name}</p>
+                              {(item.imeiOrSerial || item.product.sku) && (
+                                <p className="text-[9px] text-slate-500 font-bold mt-1">
+                                  IMEI/SN: <span className="text-slate-900 uppercase font-black">{item.imeiOrSerial || item.product.sku}</span>
+                                </p>
+                              )}
+                              {receiptType === 'pos' && item.warranty && (
+                                <p className="text-[9px] text-[#1e3a8a] font-bold mt-0.5 whitespace-nowrap">
+                                  Waranty: {item.warranty}
+                                </p>
+                              )}
+                            </td>
+                            <td className={cn("p-3 text-center text-[#1e3a8a] font-black", receiptType === 'pos' && "hidden")}>
+                              {item.warranty || 'No Warranty'}
+                            </td>
+                            <td className="p-3 text-center font-bold">{item.quantity}</td>
+                            <td className="p-3 text-right font-medium">৳{Number(item.negotiatedPrice).toFixed(0)}</td>
+                            <td className="p-3 text-right font-black">৳{(item.quantity * Number(item.negotiatedPrice)).toFixed(0)}</td>
+                          </tr>
+                        ))}
+                        {/* Filler rows for A4 to keep footer at bottom or just for aesthetic */}
+                        {receiptType === 'a4' && lastSale.items.length < 5 && Array.from({ length: 5 - lastSale.items.length }).map((_, i) => (
+                          <tr key={`filler-${i}`} className="h-12">
+                            <td className="p-3"></td>
+                            <td className="p-3"></td>
+                            <td className="p-3"></td>
+                            <td className="p-3"></td>
+                            <td className="p-3"></td>
+                            <td className="p-3"></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Summary */}
+                  <div className="flex justify-between items-start gap-8">
+                    <div className={cn("flex-1", receiptType === 'pos' && "hidden")}>
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                        <h4 className="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest flex items-center gap-2">
+                          <CheckCircle2 size={12} className="text-emerald-600" />
+                          Warranty & Terms
+                        </h4>
+                        <ul className="text-[9px] text-slate-600 font-bold space-y-1.5 list-disc pl-3">
+                          <li>Warranty valid only with original invoice.</li>
+                          <li>No warranty for physical damage, water damage, or burnt components.</li>
+                          <li>No refund or exchange after delivery.</li>
+                          <li>Company warranty products handled by authorized service centers.</li>
+                          <li>Selected products carry a 7-day checking warranty only.</li>
+                        </ul>
+                      </div>
+                      <div className="mt-4 flex items-center gap-6">
+                        {settings?.bkashQrImage ? (
+                          <div className="w-20 h-20 bg-slate-100 rounded-xl flex flex-col items-center justify-center p-2 border border-slate-200 relative overflow-hidden group">
+                            <img src={settings.bkashQrImage} alt="bKash QR" className="w-full h-full object-contain mix-blend-multiply" />
+                            <p className="text-[6px] font-black text-[#e2136e] mt-0.5 uppercase tracking-tighter w-full text-center bg-slate-100 relative z-10 pt-0.5">bKash Pay</p>
+                          </div>
+                        ) : (
+                          <div className="w-20 h-20 bg-slate-100 rounded-xl flex flex-col items-center justify-center p-2 border border-dashed border-slate-300">
+                             <p className="text-[6px] font-black text-slate-400 text-center px-1">Upload exactly your bKash QR from Settings</p>
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <div className="w-full h-8 bg-slate-100 rounded flex items-center justify-center overflow-hidden mb-1">
+                             <div className="w-full h-full opacity-20" style={{backgroundImage: 'repeating-linear-gradient(90deg, #000, #000 2px, transparent 2px, transparent 4px)'}}></div>
+                          </div>
+                          <p className="text-[7px] font-black text-slate-400 uppercase tracking-[0.3em] text-center">#SDC-{lastSale.timestamp ? format(lastSale.timestamp, 'yyyyMMdd') : '000'}</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className={cn(receiptType === 'a4' ? "w-72" : "w-full")}>
+                      <div className="space-y-2 text-slate-700">
+                        <div className="flex justify-between text-xs sm:text-sm font-medium">
+                          <span className="text-slate-400 uppercase font-black text-[10px]">Subtotal:</span>
+                          <span className="font-bold">৳{(lastSale.total + lastSale.discount).toFixed(0)}</span>
+                        </div>
+                        <div className="flex justify-between text-xs sm:text-sm font-medium">
+                          <span className="text-slate-400 uppercase font-black text-[10px]">Discount:</span>
+                          <span className="font-bold text-red-500">-৳{Number(lastSale.discount).toFixed(0)}</span>
+                        </div>
+                        <div className="flex justify-between text-xs sm:text-sm font-medium">
+                          <span className="text-slate-400 uppercase font-black text-[10px]">VAT / TAX:</span>
+                          <span className="font-bold">৳0.00</span>
+                        </div>
+                        <div className="flex justify-between text-xs sm:text-sm font-medium">
+                          <span className="text-slate-400 uppercase font-black text-[10px]">Service Charge:</span>
+                          <span className="font-bold">৳0.00</span>
+                        </div>
+                        <div className="pt-2 border-t-2 border-slate-100 flex justify-between items-center bg-slate-50 p-2 rounded-lg">
+                          <span className="retail-blue font-black uppercase tracking-widest text-xs">Grand Total:</span>
+                          <span className="text-xl font-black retail-blue">৳{lastSale.total.toFixed(0)}/-</span>
+                        </div>
+                        <div className="flex justify-between text-xs font-medium pt-2">
+                          <span className="text-slate-400 uppercase font-black text-[10px]">Paid Amount:</span>
+                          <span className="font-black text-slate-900 underline underline-offset-4">৳{lastSale.received.toFixed(0)}</span>
+                        </div>
+                        <div className="flex justify-between text-xs font-medium">
+                          <span className="text-slate-400 uppercase font-black text-[10px]">Due Amount:</span>
+                          <span className="font-black text-red-600">৳{Math.max(0, lastSale.total - lastSale.received).toFixed(0)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* POS Specific Terms and Signatures */}
+                  {receiptType === 'pos' && (
+                    <div className="mt-6 space-y-4">
+                       <div className="text-[8px] text-slate-500 font-bold border-t border-dashed border-slate-200 pt-3 text-center uppercase tracking-widest leading-loose">
+                         <p>Warranty ONLY with original invoice</p>
+                         <p>No refund or exchange after delivery</p>
+                       </div>
+                       <div className="flex justify-between pt-6">
+                        <div className="text-center">
+                          <div className="w-16 border-t border-slate-300 pt-1 mx-auto"></div>
+                          <p className="text-[7px] text-slate-400 font-black uppercase">Customer</p>
+                        </div>
+                        <div className="text-center">
+                           <div className="w-16 border-t border-slate-300 pt-1 mx-auto"></div>
+                           <p className="text-[7px] text-slate-400 font-black uppercase">Authorized</p>
+                        </div>
+                       </div>
+                       <div className="text-center pt-2">
+                         <p className="text-[9px] font-black text-slate-900 uppercase">*** Thank You ***</p>
+                       </div>
+                    </div>
+                  )}
+
+                  {/* A4 Footer with Signatures and Seal */}
+                  {receiptType === 'a4' && (
+                    <div className="mt-auto pt-10 flex justify-between items-end">
+                      <div className="text-center">
+                        <div className="w-40 border-t-2 border-[#1e3a8a] pt-2">
+                          <p className="font-black tracking-widest text-[#1e3a8a] text-xs uppercase">Customer Signature</p>
+                        </div>
+                      </div>
+                      <div className="text-center flex flex-col items-center">
+                        <div className="w-28 h-28 mb-2 flex items-center justify-center relative mix-blend-multiply opacity-90">
+                           <StoreSeal />
+                        </div>
+                        <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest hidden">Authorized Seal</p>
+                      </div>
+                      <div className="text-center">
+                        <div className="w-40 border-t-2 border-[#1e3a8a] pt-2">
+                          <p className="font-black tracking-widest text-[#1e3a8a] text-xs uppercase">Authorized Signature</p>
+                          <p className="text-[8px] text-slate-400 mt-1 uppercase font-bold tracking-widest">Smart Digital Care</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </motion.div>
           </div>

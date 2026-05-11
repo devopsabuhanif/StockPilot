@@ -64,7 +64,7 @@ export default function BackupButton() {
         backupData.data[colName] = snapshot.docs.map(doc => {
           const data = doc.data();
           // Convert Timestamps to ISO strings for JSON
-          const processedData = { ...data, id: doc.id };
+          const processedData: Record<string, any> = { ...data, id: doc.id };
           Object.keys(processedData).forEach(key => {
             if (processedData[key] && typeof processedData[key].toDate === 'function') {
               processedData[key] = processedData[key].toDate().toISOString();

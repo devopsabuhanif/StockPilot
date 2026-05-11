@@ -55,7 +55,6 @@ export default function Inventory({ products, settings }: InventoryProps) {
   const [bulkUpdateMode, setBulkUpdateMode] = useState(false);
   const [barcodeInput, setBarcodeInput] = useState('');
   const [prefilledBarcode, setPrefilledBarcode] = useState('');
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [stockHistory, setStockHistory] = useState<StockLog[]>([]);
   const [logToDelete, setLogToDelete] = useState<{logId: string, productId: string} | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -115,6 +114,16 @@ export default function Inventory({ products, settings }: InventoryProps) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape for closing modals
+      if (e.key === 'Escape') {
+        if (isModalOpen) setIsModalOpen(false);
+        if (deletingProduct) setDeletingProduct(null);
+        if (historyProduct) setHistoryProduct(null);
+        if (printingProduct) setPrintingProduct(null);
+        if (stockInMode) setStockInMode(false);
+        if (bulkUpdateMode) setBulkUpdateMode(false);
+        if (logToDelete) setLogToDelete(null);
+      }
       // Ctrl/Cmd + S for search
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
@@ -133,21 +142,21 @@ export default function Inventory({ products, settings }: InventoryProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isModalOpen]);
+  }, [isModalOpen, deletingProduct, historyProduct, printingProduct, stockInMode, bulkUpdateMode, logToDelete]);
 
   // Barcode listener for Stock In mode
   useEffect(() => {
     if (!stockInMode) return;
-
-    const focusInterval = setInterval(() => {
-      const activeElement = document.activeElement;
-      const isInput = activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA';
-      if (!isModalOpen && !isInput) {
-        barcodeInputRef.current?.focus();
-      }
-    }, 1000);
-
-    return () => clearInterval(focusInterval);
+    
+    if (!isModalOpen) {
+      setTimeout(() => {
+        const activeElement = document.activeElement;
+        const isInput = activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA';
+        if (!isInput) {
+          barcodeInputRef.current?.focus();
+        }
+      }, 100);
+    }
   }, [stockInMode, isModalOpen]);
 
   const processBarcodeStockIn = async (code: string) => {
@@ -423,51 +432,6 @@ export default function Inventory({ products, settings }: InventoryProps) {
     document.body.removeChild(link);
   };
 
-  useEffect(() => {
-    // Automatic one-time reset of all dates to today as requested
-    const hasReset = localStorage.getItem('inventory_dates_reset_v1');
-    if (!hasReset && products.length > 0) {
-      const performInitialReset = async () => {
-        try {
-          const batchPromises = products.map(product => 
-            updateDoc(doc(db, 'products', product.id), {
-              createdAt: Timestamp.now(),
-              updatedAt: Timestamp.now()
-            })
-          );
-          await Promise.all(batchPromises);
-          localStorage.setItem('inventory_dates_reset_v1', 'true');
-          console.log('Initial inventory dates reset to today completed.');
-        } catch (err) {
-          console.error('Failed to perform initial date reset:', err);
-        }
-      };
-      performInitialReset();
-    }
-  }, [products.length]);
-
-  const resetAllDates = async () => {
-    setShowResetConfirm(false);
-    setLoading(true);
-    setError(null);
-    try {
-      const batchPromises = products.map(product => 
-        updateDoc(doc(db, 'products', product.id), {
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now()
-        })
-      );
-      await Promise.all(batchPromises);
-      setSuccessMessage('All product dates have been reset to today.');
-      setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (error: any) {
-      console.error("Inventory resetAllDates error:", error);
-      setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const enrichDatabase = async () => {
     setLoading(true);
     setError(null);
@@ -714,10 +678,19 @@ export default function Inventory({ products, settings }: InventoryProps) {
               ref={searchInputRef}
               type="text"
               placeholder="Search products... (⌘S)"
-              className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all"
+              className="w-full pl-10 pr-8 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 bg-slate-200/50 dark:bg-slate-700/50 rounded-full transition-colors"
+                title="Clear search"
+              >
+                <X size={12} />
+              </button>
+            )}
           </div>
           
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
@@ -751,13 +724,6 @@ export default function Inventory({ products, settings }: InventoryProps) {
               <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
             </div>
             
-            <button
-              onClick={() => setShowResetConfirm(true)}
-              className="p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl transition-all"
-              title="Reset All Dates to Today"
-            >
-              <Calendar size={18} />
-            </button>
             <button
               onClick={enrichDatabase}
               className="p-2 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-xl transition-all flex items-center justify-center gap-2 font-bold text-xs uppercase"
@@ -2055,42 +2021,6 @@ export default function Inventory({ products, settings }: InventoryProps) {
                   className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl shadow-lg shadow-indigo-200 dark:shadow-none transition-all active:scale-95"
                 >
                   Done
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Reset Dates Confirmation */}
-      <AnimatePresence>
-        {showResetConfirm && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white dark:bg-slate-900 rounded-[2rem] p-8 w-full max-w-md shadow-2xl border border-slate-200 dark:border-slate-800 text-center"
-            >
-              <div className="w-20 h-20 bg-amber-50 dark:bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-6 text-amber-500">
-                <AlertTriangle size={40} />
-              </div>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-2">Reset All Dates?</h3>
-              <p className="text-slate-500 dark:text-slate-400 mb-8">
-                This will set the "Added Date" of <span className="font-bold text-slate-900 dark:text-white">all {products.length} products</span> to today. This action is permanent and cannot be undone.
-              </p>
-              <div className="flex gap-4">
-                <button
-                  onClick={() => setShowResetConfirm(false)}
-                  className="flex-1 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={resetAllDates}
-                  className="flex-1 py-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-bold shadow-lg shadow-amber-200 dark:shadow-none transition-all"
-                >
-                  Reset All
                 </button>
               </div>
             </motion.div>

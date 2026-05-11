@@ -192,15 +192,15 @@ export function PCBuilder({ products, onBack }: PCBuilderProps) {
   };
 
   const handlePrint = () => {
-    const printContent = document.getElementById('pc-build-print-content')?.innerHTML;
-    if (printContent) {
+    const printContentElement = document.getElementById('pc-build-print-content');
+    if (printContentElement) {
       let printDiv = document.querySelector('.temp-print-container') as HTMLDivElement;
       if (!printDiv) {
         printDiv = document.createElement('div');
         printDiv.className = 'global-print-container temp-print-container';
         document.body.appendChild(printDiv);
       }
-      printDiv.innerHTML = printContent;
+      printDiv.innerHTML = printContentElement.outerHTML;
       setTimeout(() => {
         window.print();
         setTimeout(() => {
