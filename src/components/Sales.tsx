@@ -384,6 +384,14 @@ export default function Sales({ products, sales, customers, services, settings, 
           type: isService ? 'service' : 'product'
         });
 
+        // 1.5 Create public sale for social proof (redacted)
+        const publicSaleRef = doc(collection(db, 'publicSales'), saleRef.id);
+        batch.set(publicSaleRef, {
+          productName: item.product.name,
+          customerName: selectedCustomer ? selectedCustomer.name : 'Someone',
+          timestamp: Timestamp.now()
+        });
+
         // 2. Update product stock (only if not a service)
         if (!isService) {
           const productRef = doc(db, 'products', item.product.id);
@@ -1389,22 +1397,28 @@ export default function Sales({ products, sales, customers, services, settings, 
                   `}</style>
                   
                   {/* Header */}
-                  <div className={cn("flex justify-between items-start mb-8", receiptType === 'pos' && "flex-col items-center text-center")}>
-                    <div className={cn("flex items-center gap-4", receiptType === 'pos' && "flex-col mb-4")}>
-                      <div className={cn("bg-white text-[#1e3a8a] border-4 border-[#1e3a8a] flex items-center justify-center p-2 rounded-2xl", receiptType === 'a4' ? "w-20 h-20" : "w-16 h-16")}>
-                        <Logo className={receiptType === 'a4' ? "w-12 h-12" : "w-10 h-10"} />
-                      </div>
-                      <div className={receiptType === 'pos' ? "text-center" : "text-left"}>
-                        <h1 className={cn("font-black tracking-tight leading-none text-[#1e3a8a]", receiptType === 'a4' ? "text-4xl uppercase" : "text-xl uppercase")}>Smart Digital Care</h1>
-                        <p className={cn("font-bold text-slate-500 tracking-tighter uppercase mb-2", receiptType === 'a4' ? "text-xs" : "text-[8px]")}>
+                  <div className={cn("flex justify-between items-start mb-4", receiptType === 'pos' && "flex-col items-center text-center")}>
+                    <div className={cn("flex items-center gap-3", receiptType === 'pos' && "flex-col mb-4")}>
+                      {settings?.shopLogo ? (
+                        <div className={cn("flex items-center justify-center shrink-0", receiptType === 'a4' ? "h-14 w-auto" : "h-16 w-auto")}>
+                          <img src={settings.shopLogo} alt="Shop Logo" className="h-full w-auto object-contain" />
+                        </div>
+                      ) : (
+                        <div className={cn("bg-white text-[#1e3a8a] border-4 border-[#1e3a8a] flex items-center justify-center p-2 rounded-xl shrink-0", receiptType === 'a4' ? "w-16 h-16" : "w-16 h-16")}>
+                          <Logo className={receiptType === 'a4' ? "w-10 h-10" : "w-10 h-10"} />
+                        </div>
+                      )}
+                      <div className={cn(receiptType === 'pos' ? "text-center" : "text-left", settings?.shopLogo && "hidden")}>
+                        <h1 className={cn("font-black tracking-tight leading-none text-[#1e3a8a]", receiptType === 'a4' ? "text-2xl uppercase" : "text-xl uppercase")}>{settings?.shopName || 'Smart Digital Care'}</h1>
+                        <p className={cn("font-bold text-slate-500 tracking-tighter uppercase mb-2", receiptType === 'a4' ? "text-[10px]" : "text-[8px]")}>
                           Quality Products • Trusted Service • Satisfaction
                         </p>
-                        <div className={cn("space-y-0.5 text-slate-600 font-medium", receiptType === 'a4' ? "text-xs" : "text-[9px]")}>
-                          <p>{settings?.shopAddress || 'Cantonment Masjid Market, Cantonment, Cumilla'}</p>
-                          <p>For any support WhatsApp: +8801766407313</p>
-                          <p>For mobile repair whatsapp: +8801854648690</p>
-                          <p>Facebook: facebook.com/sdc.cantonment</p>
-                        </div>
+                      </div>
+                      <div className={cn("space-y-0.5 text-slate-600 font-medium", receiptType === 'a4' ? "text-[10px]" : "text-[9px]", settings?.shopLogo && receiptType === 'a4' && "ml-3 pl-3 border-l-[1.5px] border-slate-200")}>
+                        <p>{settings?.shopAddress || 'Cantonment Masjid Market, Cantonment, Cumilla'}</p>
+                        <p>For any support WhatsApp: +8801766407313</p>
+                        <p>For mobile repair whatsapp: +8801854648690</p>
+                        <p>Facebook: facebook.com/sdc.cantonment</p>
                       </div>
                     </div>
                     
@@ -1491,43 +1505,31 @@ export default function Sales({ products, sales, customers, services, settings, 
                   </div>
 
                   {/* Summary */}
-                  <div className="flex justify-between items-start gap-8">
-                    <div className={cn("flex-1", receiptType === 'pos' && "hidden")}>
-                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                        <h4 className="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest flex items-center gap-2">
-                          <CheckCircle2 size={12} className="text-emerald-600" />
-                          Warranty & Terms
-                        </h4>
-                        <ul className="text-[9px] text-slate-600 font-bold space-y-1.5 list-disc pl-3">
-                          <li>Warranty valid only with original invoice.</li>
-                          <li>No warranty for physical damage, water damage, or burnt components.</li>
-                          <li>No refund or exchange after delivery.</li>
-                          <li>Company warranty products handled by authorized service centers.</li>
-                          <li>Selected products carry a 7-day checking warranty only.</li>
-                        </ul>
-                      </div>
-                      <div className="mt-4 flex items-center gap-6">
-                        {settings?.bkashQrImage ? (
-                          <div className="w-20 h-20 bg-slate-100 rounded-xl flex flex-col items-center justify-center p-2 border border-slate-200 relative overflow-hidden group">
+                  <div className="flex flex-wrap justify-between items-start gap-4 mt-2">
+                    <div className={cn("flex-1 min-w-[200px]", receiptType === 'pos' && "hidden")}>
+                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex items-start gap-4">
+                        <div className="flex-1">
+                          <h4 className="text-[9px] font-black uppercase text-slate-400 mb-1.5 tracking-widest flex items-center gap-1.5">
+                            <CheckCircle2 size={10} className="text-emerald-600" />
+                            Terms & Warranty
+                          </h4>
+                          <ul className="text-[8px] text-slate-600 font-bold space-y-0.5 list-disc pl-3">
+                            <li>Warranty valid only with original invoice. No refund/exchange after delivery.</li>
+                            <li>No warranty for physical/water damage, or burnt components.</li>
+                            <li>Company warranty products handled by authorized service centers.</li>
+                          </ul>
+                        </div>
+                        {settings?.bkashQrImage && (
+                          <div className="w-20 h-20 bg-white rounded-lg flex flex-col items-center justify-center p-1.5 border border-slate-200 shrink-0">
                             <img src={settings.bkashQrImage} alt="bKash QR" className="w-full h-full object-contain mix-blend-multiply" />
-                            <p className="text-[6px] font-black text-[#e2136e] mt-0.5 uppercase tracking-tighter w-full text-center bg-slate-100 relative z-10 pt-0.5">bKash Pay</p>
-                          </div>
-                        ) : (
-                          <div className="w-20 h-20 bg-slate-100 rounded-xl flex flex-col items-center justify-center p-2 border border-dashed border-slate-300">
-                             <p className="text-[6px] font-black text-slate-400 text-center px-1">Upload exactly your bKash QR from Settings</p>
+                            <p className="text-[6px] font-black text-[#e2136e] uppercase tracking-tighter w-full text-center mt-0.5">bKash Pay</p>
                           </div>
                         )}
-                        <div className="flex-1">
-                          <div className="w-full h-8 bg-slate-100 rounded flex items-center justify-center overflow-hidden mb-1">
-                             <div className="w-full h-full opacity-20" style={{backgroundImage: 'repeating-linear-gradient(90deg, #000, #000 2px, transparent 2px, transparent 4px)'}}></div>
-                          </div>
-                          <p className="text-[7px] font-black text-slate-400 uppercase tracking-[0.3em] text-center">#SDC-{lastSale.timestamp ? format(lastSale.timestamp, 'yyyyMMdd') : '000'}</p>
-                        </div>
                       </div>
                     </div>
                     
-                    <div className={cn(receiptType === 'a4' ? "w-72" : "w-full")}>
-                      <div className="space-y-2 text-slate-700">
+                    <div className={cn(receiptType === 'a4' ? "w-64" : "w-full")}>
+                      <div className="space-y-1.5 text-slate-700">
                         <div className="flex justify-between text-xs sm:text-sm font-medium">
                           <span className="text-slate-400 uppercase font-black text-[10px]">Subtotal:</span>
                           <span className="font-bold">৳{(lastSale.total + lastSale.discount).toFixed(0)}</span>
@@ -1585,23 +1587,30 @@ export default function Sales({ products, sales, customers, services, settings, 
 
                   {/* A4 Footer with Signatures and Seal */}
                   {receiptType === 'a4' && (
-                    <div className="mt-auto pt-10 flex justify-between items-end">
-                      <div className="text-center">
-                        <div className="w-40 border-t-2 border-[#1e3a8a] pt-2">
-                          <p className="font-black tracking-widest text-[#1e3a8a] text-xs uppercase">Customer Signature</p>
+                    <div className="mt-auto pt-4">
+                      <div className="flex justify-between items-end">
+                        <div className="text-center">
+                          <div className="w-24 border-t border-[#1e3a8a] pt-1.5">
+                            <p className="font-black tracking-widest text-[#1e3a8a] text-[8px] uppercase">Customer Signature</p>
+                          </div>
+                        </div>
+                        <div className="text-center flex flex-col items-center">
+                          <div className="w-28 h-28 flex items-center justify-center relative mix-blend-multiply opacity-90">
+                             <StoreSeal />
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="w-24 border-t border-[#1e3a8a] pt-1.5">
+                            <p className="font-black tracking-widest text-[#1e3a8a] text-[8px] uppercase">Authorized Signature</p>
+                            <p className="text-[6px] text-slate-400 mt-0.5 uppercase font-bold tracking-widest">{settings?.shopName || 'Smart Digital Care'}</p>
+                          </div>
                         </div>
                       </div>
-                      <div className="text-center flex flex-col items-center">
-                        <div className="w-28 h-28 mb-2 flex items-center justify-center relative mix-blend-multiply opacity-90">
-                           <StoreSeal />
-                        </div>
-                        <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest hidden">Authorized Seal</p>
-                      </div>
-                      <div className="text-center">
-                        <div className="w-40 border-t-2 border-[#1e3a8a] pt-2">
-                          <p className="font-black tracking-widest text-[#1e3a8a] text-xs uppercase">Authorized Signature</p>
-                          <p className="text-[8px] text-slate-400 mt-1 uppercase font-bold tracking-widest">Smart Digital Care</p>
-                        </div>
+                      
+                      {/* Thank You Message */}
+                      <div className="mt-2 border-t border-slate-200 pt-2 text-center flex flex-col items-center">
+                        <p className="font-black text-[#1e3a8a] text-[10px] uppercase tracking-widest">{settings?.memoFooter || 'THANK YOU FOR YOUR BUSINESS!'}</p>
+                        <p className="text-[7px] text-slate-500 font-bold mt-0.5 tracking-wider">Please come again. It was a pleasure serving you.</p>
                       </div>
                     </div>
                   )}

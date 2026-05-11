@@ -180,6 +180,17 @@
         "createdAt": { "type": "string", "format": "date-time", "description": "The creation time." }
       },
       "required": ["provider", "type", "amount", "commission", "customerPhone", "createdAt"]
+    },
+    "PublicSale": {
+      "title": "PublicSale",
+      "description": "A redacted sale record for social proof on the storefront.",
+      "type": "object",
+      "properties": {
+        "productName": { "type": "string", "description": "The name of the product sold." },
+        "customerName": { "type": "string", "description": "The name of the buyer (optional/obfuscated)." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "The time of the sale." }
+      },
+      "required": ["productName", "timestamp"]
     }
   },
   "firestore": {
@@ -194,6 +205,10 @@
     "/sales/{saleId}": {
       "schema": "Sale",
       "description": "Collection of sales records."
+    },
+    "/publicSales/{saleId}": {
+      "schema": "PublicSale",
+      "description": "Redacted sales records for public social proof."
     },
     "/notes/{noteId}": {
       "schema": "Note",

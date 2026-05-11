@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { db, collection, query, where, getDocs, limit, orderBy } from '../firebase';
-import { Product, Sale } from '../types';
+import { Product, PublicSale } from '../types';
 import { 
   Package, 
   Phone, 
@@ -80,14 +80,14 @@ export default function Storefront({ user }: StorefrontProps) {
 
   // Real Recent purchases popup (Social Proof)
   useEffect(() => {
-    // Fetch last 10 real sales
-    const q = query(collection(db, 'sales'), orderBy('timestamp', 'desc'), limit(10));
+    // Fetch last 10 real redacted sales
+    const q = query(collection(db, 'publicSales'), orderBy('timestamp', 'desc'), limit(10));
     let interval: NodeJS.Timeout;
     
     const initPopup = async () => {
       try {
         const snapshot = await getDocs(q);
-        const sales = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sale));
+        const sales = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PublicSale));
         if (sales.length === 0) return;
 
         // Every 30 seconds, pick a random sale from the recent ones to show

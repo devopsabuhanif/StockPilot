@@ -176,6 +176,45 @@ export default function Settings() {
             </div>
 
             <div className="space-y-1.5 md:col-span-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Shop Logo Image</label>
+               <div className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                {settings.shopLogo ? (
+                  <div className="relative w-32 h-16 border border-slate-200 rounded-lg overflow-hidden bg-white shrink-0">
+                    <img src={settings.shopLogo} alt="Shop Logo" className="w-full h-full object-contain" />
+                    <button
+                      type="button"
+                      onClick={() => setSettings({ ...settings, shopLogo: '' })}
+                      className="absolute top-0 right-0 bg-red-500 text-white p-0.5 rounded-bl-lg"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="w-16 h-16 bg-slate-200 dark:bg-slate-700 rounded-lg flex items-center justify-center shrink-0">
+                    <Image size={24} className="text-slate-400" />
+                  </div>
+                )}
+                <div className="flex-1">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onloadend = () => {
+                        setSettings({ ...settings, shopLogo: reader.result as string });
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                    className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">Upload your shop logo. It will replace the default text logo on memos.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 md:col-span-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">bKash QR Code Image</label>
                <div className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
                 {settings.bkashQrImage ? (

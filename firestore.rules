@@ -48,6 +48,16 @@ service cloud.firestore {
              getUserData().role == 'fixer';
     }
 
+    function isStaff() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             getUserData().role == 'staff';
+    }
+
+    function isShopStaff() {
+      return isAdmin() || isStaff();
+    }
+
     function isValidUser(data) {
       return data.keys().hasAll(['email', 'role', 'displayName']) &&
              data.email is string &&
@@ -108,6 +118,13 @@ service cloud.firestore {
              data.unitPrice is number && data.unitPrice >= 0 &&
              data.totalPrice is number && data.totalPrice >= 0 &&
              data.totalProfit is number &&
+             data.timestamp is timestamp;
+    }
+
+    function isValidPublicSale(data) {
+      return data.keys().hasAll(['productName', 'customerName', 'timestamp']) &&
+             data.productName is string &&
+             data.customerName is string &&
              data.timestamp is timestamp;
     }
 
@@ -223,23 +240,30 @@ service cloud.firestore {
 
     match /products/{productId} {
       allow read: if true;
-      allow create: if isAdmin() && isValidProduct(request.resource.data);
-      allow update: if isAdmin() && (
+      allow create: if isShopStaff() && isValidProduct(request.resource.data);
+      allow update: if isShopStaff() && (
         isValidProduct(request.resource.data) || 
         isValidProduct(resource.data.merge(request.resource.data))
       );
       allow delete: if isAdmin();
 
       match /stockHistory/{logId} {
-        allow read: if isAdmin();
-        allow create: if isAdmin() && isValidStockLog(request.resource.data);
+        allow read: if isShopStaff();
+        allow create: if isShopStaff() && isValidStockLog(request.resource.data);
         allow update, delete: if false;
       }
     }
 
     match /sales/{saleId} {
-      allow read: if isAdmin();
-      allow create: if isAdmin() && isValidSale(request.resource.data);
+      allow read: if isShopStaff();
+      allow create: if isShopStaff() && isValidSale(request.resource.data);
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    match /publicSales/{saleId} {
+      allow read: if true;
+      allow create: if isShopStaff() && isValidPublicSale(request.resource.data);
       allow update: if false;
       allow delete: if isAdmin();
     }
@@ -266,9 +290,9 @@ service cloud.firestore {
     }
 
     match /serviceOrders/{orderId} {
-      allow read: if isAdmin();
-      allow create: if isAdmin() && isValidServiceOrder(request.resource.data);
-      allow update: if isAdmin() && isValidServiceOrder(request.resource.data);
+      allow read: if isShopStaff();
+      allow create: if isShopStaff() && isValidServiceOrder(request.resource.data);
+      allow update: if isShopStaff() && isValidServiceOrder(request.resource.data);
       allow delete: if isAdmin();
     }
 
@@ -280,9 +304,9 @@ service cloud.firestore {
     }
 
     match /customers/{customerId} {
-      allow read: if isAdmin();
-      allow create: if isAdmin() && isValidCustomer(request.resource.data);
-      allow update: if isAdmin() && isValidCustomer(request.resource.data);
+      allow read: if isShopStaff();
+      allow create: if isShopStaff() && isValidCustomer(request.resource.data);
+      allow update: if isShopStaff() && isValidCustomer(request.resource.data);
       allow delete: if isAdmin();
     }
 
@@ -294,9 +318,9 @@ service cloud.firestore {
     }
 
     match /mfsTransactions/{txId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidMFSTransaction(request.resource.data);
-      allow update: if isAdmin() && isValidMFSTransaction(request.resource.data);
+      allow read: if isShopStaff();
+      allow create: if isShopStaff() && isValidMFSTransaction(request.resource.data);
+      allow update: if isShopStaff() && isValidMFSTransaction(request.resource.data);
       allow delete: if isAdmin();
     }
 

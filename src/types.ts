@@ -48,6 +48,13 @@ export interface Sale {
   type: 'product' | 'service';
 }
 
+export interface PublicSale {
+  id: string;
+  productName: string;
+  customerName?: string | null;
+  timestamp: Timestamp;
+}
+
 export interface Note {
   id: string;
   userId: string;
@@ -126,6 +133,7 @@ export interface Settings {
   shopEmail?: string;
   memoFooter?: string;
   bkashQrImage?: string;
+  shopLogo?: string;
 }
 
 export type UserRole = 'admin' | 'fixer' | 'staff';
